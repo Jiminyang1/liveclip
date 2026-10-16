@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "liveclip"
+version = "0.1.0"
+description = "Live-follow auto clipping for Chinese streamers: record → transcribe → review → LLM pick → hook → cut → tight edit → QA → covers/captions → dashboard → optional publish"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "LiveClip contributors" }]
+requires-python = ">=3.11"
+keywords = ["livestream", "clipping", "short-video", "asr", "claude", "ffmpeg", "douyin", "bilibili"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Multimedia :: Video",
+    "Natural Language :: Chinese (Simplified)",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "pillow>=10.0",
+    "soundfile>=0.12",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+api = ["anthropic>=0.70"]
+asr-local = ["funasr>=1.2", "modelscope>=1.20", "torch>=2.2", "torchaudio>=2.2"]
+vision = ["opencv-python-headless>=4.9"]
+montage = ["jieba>=0.42"]
+publish = ["playwright>=1.50", "biliup>=1.2"]
+dev = ["ruff>=0.6", "pytest>=8"]
+all = ["liveclip[api,asr-local,vision,montage,publish]"]
+
+[project.scripts]
+liveclip = "liveclip.cli:entry"
+
+[project.urls]
+Homepage = "https://github.com/OWNER/liveclip"
+
+[tool.hatch.build.targets.wheel]
+packages = ["liveclip"]
+
+[tool.hatch.build.targets.sdist]
+include = ["liveclip", "deploy", "docs", "tests", "README*.md", "LICENSE", "CHANGELOG.md", "CONTRIBUTING.md",
+           "config.example.yaml", ".env.example", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

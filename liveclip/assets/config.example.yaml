@@ -1,0 +1,122 @@
+# LiveClip configuration. Copy to config.yaml (`liveclip init` does it) and edit.
+# Everything here is optional; missing keys fall back to the defaults in liveclip/config.py.
+# API keys never go here — put them in .env (see .env.example).
+
+# Where data/, clips/, deliver/, videos/, recordings/, logs/ live. Default: the folder containing this file.
+# workspace: /path/to/workspace
+# paths: {data: data, clips: clips, deliver: deliver, videos: videos, recordings: recordings, logs: logs, assets: assets}
+
+streamer:
+  # How prompts, end cards and captions refer to the streamer. Prompts are Chinese.
+  name: 主播
+  # Speaker labels written by diarization (subtitle lines get [主播] / [嘉宾]).
+  speaker_label: 主播
+  guest_label: 嘉宾
+  # ASR spellings of the streamer's name to unify (English words match whole words, case-insensitive).
+  # name_variants: [Alex, 阿力]
+  # canonical_name: 阿力
+  persona: 一位中文口播/直播博主，主做观点类口播和直播连麦
+  topics: 个人成长、观点评论、生活方式
+  audience: 短视频平台（抖音、B站、视频号、小红书）的观众
+  # Examples for the "events & collaborations" category (people, theories, trending events). Optional.
+  event_examples: []
+  # Viewpoints that are known to perform well when clipped — matching segments are preferred (never de-duplicated).
+  hot_points: []
+  # Topics to pick less often (far from the audience's life).
+  avoid_topics: 离观众生活远的概念
+  # Told to the picking model for vertical livestream recordings.
+  live_layout_note: 竖屏直播。连麦时画面左右分屏，左边是主播，右边是连麦对象；字幕是机器识别。
+
+branding:
+  end_card: 完整版见主页        # last 2 s of clips cut from finished videos ("" = no end card)
+  end_card_live: 直播精选       # last 2 s of livestream clips
+  source: ""                    # Bilibili repost source text (required when publish.bili.copyright = 2)
+
+asr:
+  engine: bailian               # bailian | sensevoice
+  bailian_model: qwen-audio-3.1-asr-flash-filetrans
+  hotwords: {}                  # word: weight (1-5), e.g. {专有名词: 4}
+  device: auto                  # SenseVoice: auto | cpu | cuda | mps
+  prices_cny_per_mtok:          # for the cost ledger: [input, output] yuan per million tokens
+    qwen-audio-3.1-asr-flash-filetrans: [0.8, 2.7]
+
+review:
+  # Extra proofreading rules appended to the subtitle-review prompt, one sentence each, e.g. homophones of your
+  # hot words: "「X」和「Y」读音一样：讲 A 的是 X，讲 B 的是 Y。"
+  extra_rules: []
+
+models:                          # Claude model per step
+  pick: claude-opus-5-5
+  review: claude-opus-5-5
+  hook: claude-opus-5-5
+  tight: claude-opus-5-5
+  themes: claude-sonnet-5-5
+
+llm:
+  backend: auto                  # auto (API when ANTHROPIC_API_KEY is set, else `claude` CLI) | cli | api
+  lean: true                     # claude -p without tools/MCP/default system prompt (~20x cheaper per call)
+  effort: high
+  api_fallbacks: true
+
+tags:
+  douyin_must: []                # always-on topics for Douyin / Channels / Xiaohongshu (Douyin allows 5 in total)
+  soft: []                       # added only when there is room
+  bili_must: []                  # always-on Bilibili tags (10 max)
+  brand: []                      # words dropped from content tags (the must lists are included automatically)
+  conditional: {tag: "", when_any: []}   # add `tag` only when a content tag is in when_any
+  generic: [直播, 观点, 金句, 干货, 成长, 切片, 直播切片, 分享, 认知]   # format words, never used as topics
+  limit: {douyin: 5, xhs: 10, bili: 10, shipinhao: 6}
+
+timezones:
+  audience: Asia/Shanghai        # daily publish limits and scheduled times use this zone
+  audience_label: 北京
+  recorder: Asia/Shanghai        # local zone of the recording machine (segment file names)
+
+live:
+  remote: ""                     # rclone path the recorder uploads to, e.g. myremote:liveclip-live
+  archive_remote: ""             # optional: full versions are archived here, e.g. myremote:liveclip-archive/full
+  anchors: []                    # [{match: substring of the recorder's anchor name, key: main}]; empty = every anchor
+  title: "{name}直播（{date:%Y年%m月%d日}）"   # placeholders: name, date, key, anchor
+  window_sec: 1200               # pick a round every 20 minutes of transcript
+  tail_sec: 300                  # leave the last 5 minutes for the next round (the topic may not be finished)
+  lookback_sec: 300
+  poll_sec: 60
+  event_note_file: live_note.txt # data/<file>: "today's event" written from the dashboard, read every round
+
+recorder:                        # optional: show the recording server on the dashboard (reads logs over ssh)
+  ssh_host: ""                   # an ssh alias from ~/.ssh/config
+  recorder_log: /opt/liveclip/recorder.log
+  uploader_log: /opt/liveclip/uploader.log
+  services: [liveclip-recorder.service, liveclip-uploader.timer]
+  disk_path: /opt
+
+publish:
+  # Publishing is OFF by default. Only publish content you own or are authorised to repost; you are responsible
+  # for complying with each platform's terms. Uploaders refuse to run unless enabled here.
+  enabled: false
+  douyin:
+    enabled: false
+    account_id: ""               # the Douyin ID (抖音号) of the account to publish to; checked before every upload
+    per_day: 5                   # max posts per day (audience timezone)
+    gap_min: 60                  # min minutes between posts
+    next_hour: 19                # when the day is full, queue for this hour the next day
+    chrome_channel: chrome
+  bili:
+    enabled: false
+    biliup: biliup               # path or name of the biliup executable
+    tid: 21                      # Bilibili category id
+    copyright: 2                 # 1 = original, 2 = repost (needs branding.source)
+
+montage:
+  speaker: null                  # default: streamer.speaker_label
+  aliases: {}                    # correct word: [common ASR misspellings]
+  exclude: {}                    # phrase: [longer words that contain it but mean something else]
+  jieba_words: []                # proper nouns added to jieba for --suggest
+
+fonts:                           # default: <workspace>/assets/fonts/NotoSansSC*.ttf, then system CJK fonts
+  title: null                    # font for titles / captions (bold)
+  title_index: null              # face index for .ttc files
+  cover: null                    # font for covers (a variable font gets weight "Black")
+
+notify: {backend: auto}          # auto | macos | linux | none
+dashboard: {port: 8771, min_free_gb: 20}

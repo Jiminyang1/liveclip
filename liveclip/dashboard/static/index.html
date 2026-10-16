@@ -1,0 +1,1441 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>切片后台状态</title>
+<link rel="icon" href="data:,">
+<!-- 不用任何外部库/字体：单文件、无构建、CDN 慢也不会白屏。时间轴、费用条都是手写的（见 drawTimeline）。 -->
+<style>
+/* ================= 设计变量 ================= */
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --ink:#14161b; --ink-2:#374151; --muted:#6b7280; --faint:#9ca3af; --line:#e6e8ec; --soft:#f2f4f7; --soft-2:#e9ecf1;
+  --accent:#2563eb; --accent-2:#7c3aed; --accent-soft:#e0eaff; --good:#15803d; --good-soft:#dcfce7; --good-mark:#22c55e;
+  --warn:#b45309; --warn-soft:#fef3c7; --warn-mark:#f59e0b; --bad:#dc2626; --bad-soft:#fee2e2; --dy:#111827; --bili:#fb7299;
+  --s9:#16a34a; --s8:#2563eb; --s7:#94a3b8;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+  --r:14px; --gut:24px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0d0f13; --panel:#161920; --ink:#e8eaef; --ink-2:#c9ced8; --muted:#9aa3b2; --faint:#6b7280; --line:#262a34; --soft:#1d212a; --soft-2:#262b36;
+    --accent:#5b9dff; --accent-2:#a78bfa; --accent-soft:#17305a; --good:#4ade80; --good-soft:#12301f; --good-mark:#22c55e;
+    --warn:#fbbf24; --warn-soft:#3a2c0b; --warn-mark:#f59e0b; --bad:#f87171; --bad-soft:#3b1616; --dy:#e5e7eb;
+    --s9:#22c55e; --s8:#5b9dff; --s7:#64748b; --shadow:none; color-scheme:dark;
+  }
+}
+@media (max-width:640px){ :root{--gut:14px} }
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",sans-serif;overflow-x:hidden}
+button{font:inherit}
+.num{font-variant-numeric:tabular-nums}
+
+/* ================= 顶栏 ================= */
+header{display:flex;align-items:center;gap:10px 14px;padding:14px var(--gut);flex-wrap:wrap;background:var(--bg)}
+@media (min-width:761px){header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid transparent}
+  header.scrolled{border-bottom-color:var(--line)}}
+h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.01em;white-space:nowrap}
+.sub{color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:6px}
+.right{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bj{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bj small{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+@media (max-width:640px){header{gap:6px 10px}.right{margin-left:0;width:100%;justify-content:space-between}.bj{font-size:13px}}
+.mockflag{font-size:11px;font-weight:700;color:#fff;background:var(--accent-2);padding:1px 7px;border-radius:5px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.dot.on{background:var(--good-mark);box-shadow:0 0 0 3px var(--good-soft)}
+.dot.bad{background:var(--bad);box-shadow:0 0 0 3px var(--bad-soft)}
+.dot.warn{background:var(--warn-mark);box-shadow:0 0 0 3px var(--warn-soft)}
+.dot.pulse{animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 5px transparent}}
+
+/* ================= 布局 ================= */
+main{padding:6px var(--gut) 40px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 360px;max-width:1680px;margin:0 auto}
+@media (max-width:1100px){main{grid-template-columns:minmax(0,1fr)}}
+.col{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-content:start;min-width:0}
+.col > *{min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;box-shadow:var(--shadow);min-width:0}
+@media (max-width:640px){.panel{padding:14px}}
+.panel > h2{font-size:14px;margin:0 0 14px;font-weight:650;display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.panel > h2 .meta{margin-left:auto;font-weight:400;color:var(--muted);font-size:12px;min-width:0;overflow-wrap:anywhere}
+.err{background:var(--bad-soft);color:var(--bad);padding:10px 14px;border-radius:10px;margin:0 var(--gut) 10px;font-size:13px}
+.empty{color:var(--muted);font-size:13px;padding:6px 0}
+
+/* ================= 健康卡 ================= */
+.health{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.health{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+.hcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0;box-shadow:var(--shadow)}
+.hcard .k{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:7px}
+.hcard .v{font-size:15.5px;font-weight:650;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hcard .s{color:var(--muted);font-size:12px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ================= 流水线 ================= */
+.pipe{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);padding:2px 0 0}
+.node{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0}
+.node::before{content:"";position:absolute;top:16px;right:50%;width:100%;height:2px;background:var(--line);z-index:0}
+.node:first-child::before{display:none}
+.node.done::before{background:var(--accent)}
+.node.active::before{background:repeating-linear-gradient(90deg,var(--accent) 0 6px,transparent 6px 12px);background-size:24px 2px;animation:flow 1s linear infinite}
+@keyframes flow{to{background-position:24px 0}}
+.ring{position:relative;z-index:1;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:12.5px;font-weight:700;flex:none;
+  background:var(--panel);border:2px solid var(--line);color:var(--faint)}
+.node.done .ring{background:var(--accent);border-color:var(--accent);color:#fff}
+.node.active .ring{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.node.active .ring::after{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--accent);opacity:.5;animation:halo 1.6s ease-out infinite}
+@keyframes halo{from{transform:scale(.85);opacity:.6}to{transform:scale(1.2);opacity:0}}
+.node .lbl{margin-top:7px;font-size:12px;font-weight:600;color:var(--muted);line-height:1.25;padding:0 2px;overflow-wrap:anywhere;min-height:2.5em}
+.node.done .lbl{color:var(--ink-2)}
+.node.active .lbl{color:var(--accent)}
+.node .tm{font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums;min-height:16px}
+@media (max-width:760px){
+  .pipe{grid-auto-flow:row;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .node{flex-direction:row;gap:7px;text-align:left;background:var(--soft);border-radius:9px;padding:6px 8px}
+  .node::before{display:none}
+  .ring{width:20px;height:20px;font-size:10.5px;border-width:1.5px}
+  .node.active{background:var(--accent-soft)}
+  .node.active .ring::after{inset:-4px}
+  .node .lbl{margin:0;min-height:0;font-size:11.5px}
+  .node .tm{display:none}
+}
+
+/* ================= 本场 ================= */
+.shead{display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap;margin-bottom:14px}
+.shead .who{font-size:15px;font-weight:700}
+.shead .when{color:var(--muted);font-size:12.5px}
+.shead .id{margin-left:auto;color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+.tag{font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:6px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.tag.live{color:#fff;background:var(--bad)}
+.tag.live::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.4s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+.tag.ended{background:var(--soft-2);color:var(--ink-2)}
+.tag.wrap{background:var(--warn-soft);color:var(--warn)}
+.tag.wait{background:var(--soft);color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px}
+@media (max-width:760px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.tile{background:var(--soft);border-radius:12px;padding:10px 12px;min-width:0}
+.tile .n{font-size:21px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .n small{font-size:12px;font-weight:550;color:var(--muted);margin:0 2px}
+.tile .n.word{font-size:18px}
+.tile .l{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 时间轴（drawTimeline 按像素排版，标签永不重叠） */
+.tl{position:relative;user-select:none;-webkit-user-select:none;min-height:60px}
+.tl-flag{position:absolute;height:20px;line-height:20px;font-size:11.5px;font-weight:650;padding:0 7px;border-radius:6px;white-space:nowrap;z-index:3;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
+.tl-flag.picked{background:var(--good-soft);color:var(--good)}
+.tl-flag.now{background:var(--bad);color:#fff}
+.tl-flag.now::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:blink 1.4s ease-in-out infinite}
+.tl-flag.idle{background:var(--ink);color:var(--panel)}
+.tl-flag.next{background:var(--soft);color:var(--muted);font-weight:600}
+.tl-flag.end{background:var(--ink);color:var(--panel)}
+.tl-flag.wrap{background:var(--warn-soft);color:var(--warn)}
+.tl-line{position:absolute;width:0;z-index:2;pointer-events:none;border-left:2px solid var(--ink)}
+.tl-line.picked{border-left-color:var(--good-mark)}
+.tl-line.now{border-left-color:var(--bad)}
+.tl-line.next{border-left:1.5px dashed var(--faint)}
+.tl-line.wrap{border-left-color:var(--warn-mark)}
+.tl-grid{position:absolute;width:0;border-left:1px dashed var(--line);pointer-events:none}
+.tl-pill{position:absolute;height:10px;border-radius:3px;cursor:pointer;z-index:1;transition:transform .1s}
+.tl-pill.unpub{opacity:.38}
+.tl-pill:hover{transform:scaleY(1.5);opacity:1;z-index:4;box-shadow:0 0 0 1.5px var(--panel),0 0 0 3px var(--ink)}
+.tl-bar{position:absolute;left:0;right:0;height:14px;border-radius:7px;overflow:hidden;
+  background:repeating-linear-gradient(135deg,var(--soft) 0 5px,var(--soft-2) 5px 10px)}
+.tl-seg{position:absolute;top:0;bottom:0;background:linear-gradient(180deg,var(--accent),var(--accent-2))}
+.tl-seg.gap{box-shadow:inset -1px 0 0 var(--panel)}
+.tl-seg.fb{background:var(--warn-mark)}
+.tl-tick{position:absolute;font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl-tick::before{content:"";position:absolute;left:50%;top:-5px;height:4px;border-left:1px solid var(--faint)}
+.tl-tick.first::before{left:0}.tl-tick.last::before{left:auto;right:0}
+.legend{display:flex;gap:6px 14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted);align-items:center}
+.legend span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.legend i{display:inline-block;width:12px;height:8px;border-radius:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;min-width:0}
+.chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:inline-flex;align-items:center;gap:4px}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.good{background:var(--good-soft);color:var(--good)}
+.chip.bad{background:var(--bad-soft);color:var(--bad)}
+.chip.dy{background:var(--dy);color:var(--panel)}
+.chip.bili{background:var(--bili);color:#fff}
+.chip.run{background:var(--accent-soft);color:var(--accent)}
+.chip.s9{background:var(--s9);color:#fff;font-weight:700}
+.chip.s8{background:var(--s8);color:#fff;font-weight:700}
+.chip.s7{background:var(--soft-2);color:var(--ink);font-weight:700}
+.fullrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.fullrow .lab{font-size:12.5px;font-weight:650;color:var(--ink-2);margin-right:4px}
+a.btn{text-decoration:none;display:inline-block}
+
+/* ================= 选段决策 ================= */
+.nowbar{display:flex;gap:10px;align-items:center;background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:12px;min-width:0;overflow-wrap:anywhere}
+.nowbar.idle{background:var(--soft);color:var(--muted);font-weight:500}
+.nowbar.ok{background:var(--good-soft);color:var(--good)}
+.nowbar .spin{flex:none}
+.round + .round{border-top:1px solid var(--line)}
+.round > summary{list-style:none;cursor:pointer}
+.round > summary::-webkit-details-marker{display:none}
+.rhead{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;padding:9px 0}
+.rhead::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;margin:0 3px 0 1px}
+.round[open] > .rhead::before{transform:rotate(45deg)}
+.rhead .pills{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.rhead b{font-size:13.5px}
+.rhead .sum{font-size:12px;color:var(--muted)}
+.round[open]{padding-bottom:10px}
+.dec{border:1px solid var(--line);border-radius:10px;margin-top:6px;overflow:hidden}
+.dec summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 12px}
+.dec summary::-webkit-details-marker{display:none}
+.dec summary:hover{background:var(--soft)}
+.dec[open] summary{background:var(--soft)}
+.badge{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.badge.picked{background:var(--good-soft);color:var(--good)}
+.badge.deferred{background:var(--warn-soft);color:var(--warn)}
+.badge.overlap,.badge.unknown{background:var(--soft);color:var(--muted)}
+.badge.dropped{background:var(--bad-soft);color:var(--bad)}
+.dec .tt{min-width:0}
+.dec .tt b{font-size:13px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dec .tt div{font-size:12px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.score{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);background:var(--soft-2);border-radius:6px;padding:2px 7px;white-space:nowrap}
+.dec .detail{padding:6px 14px 12px;font-size:12.5px;line-height:1.65;display:grid;gap:8px;overflow-wrap:anywhere}
+.dec .detail .k{font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:1px}
+.dec .detail .m{color:var(--muted);font-size:12px}
+.hooks{display:grid;gap:6px}
+.hk{border-left:3px solid var(--line);padding-left:8px}
+.hk.best{border-left-color:var(--good-mark)}
+.hk q{font-weight:600}
+@media (max-width:640px){.dec summary{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}.dec summary .badge{grid-column:1/-1;justify-self:start}}
+
+/* ================= 出片墙 ================= */
+.wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:12px}
+@media (max-width:640px){.wall{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}
+.group + .group{margin-top:20px}
+.ghead{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;margin-bottom:10px}
+.ghead .n{font-size:12px;font-weight:600;color:var(--muted);background:var(--soft);border-radius:999px;padding:0 8px}
+.ghead .bar2{flex:1;height:1px;background:var(--line)}
+.seg2{display:inline-flex;background:var(--soft);border-radius:8px;padding:2px;gap:2px;flex:none}
+.seg2 button{appearance:none;border:0;background:transparent;color:var(--muted);font-size:12px;font-weight:600;padding:3px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.seg2 button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.clip{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);display:flex;flex-direction:column;position:relative;min-width:0}
+.clip.lifted{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 20px -10px var(--accent)}
+.clip .ribbon{position:absolute;top:8px;right:8px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--accent);color:#fff;z-index:1;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.clip .num{position:absolute;top:8px;left:8px;font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;background:rgba(0,0,0,.55);color:#fff;z-index:1}
+.clip .cov{position:relative;aspect-ratio:3/4;background:var(--soft);cursor:pointer;overflow:hidden}
+.clip .cov img{width:100%;height:100%;object-fit:cover;display:block}
+.clip .cov .play{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transition:opacity .15s;background:rgba(0,0,0,.18)}
+.clip .cov:hover .play{opacity:1}
+.clip .cov .play b{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.92);display:grid;place-items:center}
+.clip .cov .play b::after{content:"";border-left:13px solid #111;border-top:8px solid transparent;border-bottom:8px solid transparent;margin-left:4px}
+.clip .body{padding:9px 10px 10px;display:flex;flex-direction:column;flex:1;gap:6px;min-width:0}
+.clip .ttl{font-size:13px;font-weight:600;line-height:1.35;min-height:2.7em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.clip .m{color:var(--muted);font-size:11.5px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clip .chips{margin-top:0;gap:4px}
+.clip .chips .chip{font-size:11.5px;padding:1px 7px}
+.btn{appearance:none;border:0;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;white-space:nowrap}
+.btn:hover{filter:brightness(1.08)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn.ghost{background:var(--soft-2);color:var(--ink)}
+.clip .btn{margin-top:auto;width:100%}
+.qawhy{font-size:11.5px;line-height:1.4;border-radius:6px;padding:4px 7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.qawhy.bad{background:var(--bad-soft);color:var(--bad)}
+.qawhy.warn{background:var(--warn-soft);color:var(--warn)}
+.more{display:flex;justify-content:center;margin-top:12px}
+
+/* ================= 右栏 ================= */
+.feed{max-height:420px;overflow:auto;display:grid;gap:1px;overscroll-behavior:contain}
+.ev{display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px;font-size:12.5px;padding:5px 6px;border-radius:6px}
+.ev:nth-child(odd){background:var(--soft)}
+.ev .tm{color:var(--muted);font-variant-numeric:tabular-nums}
+.ev .msg{overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.ev.good .msg{color:var(--good)} .ev.bad .msg{color:var(--bad)} .ev.warn .msg{color:var(--warn)}
+.list{display:grid;gap:10px;font-size:13px}
+.row{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.row .grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.row .muted{color:var(--muted);font-size:12px}
+.qitem{border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-width:0}
+.qitem .t{font-weight:600;font-size:13px;overflow-wrap:anywhere}
+.qitem .s{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.qitem .note{font-size:12px;margin-top:5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.qitem .note.bad{color:var(--bad)} .qitem .note.wait{color:var(--muted)}
+.qitem .btn{margin-top:8px}
+.spin{display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:rot .8s linear infinite;vertical-align:-1px}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ================= 花费 ================= */
+.eye{appearance:none;border:0;background:var(--soft);color:var(--muted);border-radius:7px;width:28px;height:24px;display:inline-grid;place-items:center;cursor:pointer;padding:0}
+.eye:hover{color:var(--ink)}
+.eye svg{width:16px;height:16px}
+.masked .ctile .n,.masked .crow .amt,.masked .cnote b{filter:blur(6px);user-select:none}
+.ctiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.ctile{background:var(--soft);border-radius:10px;padding:8px 10px;min-width:0}
+.ctile .n{font-size:17px;font-weight:750;font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:5px;line-height:1.3}
+.ctile .n small{font-size:12px;font-weight:600;color:var(--muted)}
+.ctile .l{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.ck{font-size:12px;color:var(--muted);margin-bottom:2px}
+.crow{display:grid;grid-template-columns:minmax(64px,max-content) minmax(30px,1fr) auto;gap:8px;align-items:center;font-size:12.5px;margin-top:7px}
+.crow .track2{height:8px;border-radius:4px;background:var(--soft);overflow:hidden}
+.crow .fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent-2))}
+.crow .fill.cny{background:var(--good-mark)}
+.crow .amt{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.cnote{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.55}
+
+/* ================= 弹窗 / 浮层 ================= */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:20;padding:16px}
+.modal.open{display:flex}
+.modal video{max-height:88vh;max-width:min(92vw,520px);border-radius:12px;background:#000}
+.xbtn{position:absolute;top:14px;right:14px;width:36px;height:36px;border-radius:50%;border:0;background:rgba(255,255,255,.15);color:#fff;font-size:20px;line-height:1;cursor:pointer}
+.dlg{background:var(--panel);border-radius:16px;width:min(560px,100%);max-height:90vh;overflow:auto;padding:20px;display:grid;gap:14px;position:relative}
+.dlg h3{margin:0;font-size:16px}
+.dlg .top{display:flex;gap:14px;min-width:0}
+.dlg .top img{width:88px;border-radius:8px;aspect-ratio:3/4;object-fit:cover;flex:none}
+.dlg .warnbox{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:12.5px;overflow-wrap:anywhere}
+.plat{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:6px;overflow-wrap:anywhere}
+.plat label{display:flex;align-items:center;gap:8px;font-weight:600}
+.plat .tags{font-size:12px;color:var(--muted)}
+.when{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:13px}
+.when input[type=datetime-local]{font:inherit;padding:4px 8px;border-radius:8px;border:1px solid var(--line);background:var(--soft);color:var(--ink);max-width:100%}
+.dlg .actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.dlg .msg{font-size:12.5px;color:var(--bad);margin-right:auto}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--panel);padding:8px 16px;border-radius:999px;font-size:13px;z-index:30;display:none;max-width:90vw}
+.tip{position:fixed;z-index:25;pointer-events:none;background:var(--ink);color:var(--panel);font-size:12px;line-height:1.45;padding:6px 9px;border-radius:8px;max-width:300px;white-space:pre-line;display:none;box-shadow:0 6px 16px rgba(0,0,0,.2)}
+
+/* ================= 手动上传剪辑（2026-10-14） ================= */
+.upgrid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:12px;margin-bottom:14px}
+@media (max-width:760px){.upgrid{grid-template-columns:minmax(0,1fr)}}
+.drop{position:relative;border:1.5px dashed var(--faint);border-radius:12px;background:var(--soft);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;text-align:center;padding:20px 14px;cursor:pointer;min-height:150px;transition:border-color .15s,background .15s;min-width:0}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop.off{opacity:.55;cursor:not-allowed}
+.drop svg{width:30px;height:30px;color:var(--accent);margin-bottom:2px}
+.drop b{font-size:14px}
+.drop span{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.drop input{display:none}
+.upopts{display:grid;gap:8px;align-content:start;min-width:0}
+.upopts .f{display:grid;gap:3px;color:var(--muted);font-size:12px;font-weight:600;min-width:0}
+.upopts input[type=text],.upopts select,.upopts textarea{font:inherit;font-size:13px;padding:6px 9px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);width:100%;min-width:0}
+.upopts textarea{resize:vertical;min-height:50px}
+.upopts .row2{display:flex;gap:6px 14px;align-items:flex-end;flex-wrap:wrap}
+.upopts .row2 .f{flex:1 1 150px}
+.tg{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer;padding-bottom:6px}
+.uphint{font-size:11.5px;color:var(--muted);line-height:1.45}
+.jobs{display:grid;gap:10px}
+.job{border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.job.run{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft)}
+.job .jh{display:flex;gap:6px 10px;align-items:flex-start;min-width:0;flex-wrap:wrap}
+.job .jt{flex:1 1 200px;min-width:0}
+.job .jt b{font-size:13.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.job .jt div{font-size:12px;color:var(--muted);overflow-wrap:anywhere;margin-top:1px}
+.job .je{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;display:flex;gap:6px;align-items:center}
+.jsteps{display:flex;gap:4px;flex-wrap:wrap;margin-top:10px}
+.jsteps > span{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--faint);white-space:nowrap;display:inline-flex;gap:5px;align-items:center}
+.jsteps > span.done{color:var(--ink-2);background:var(--soft-2)}
+.jsteps > span.active{background:var(--accent-soft);color:var(--accent);font-weight:650}
+.jsteps > span.bad{background:var(--bad-soft);color:var(--bad);font-weight:650}
+.jerr{margin-top:10px;background:var(--bad-soft);color:var(--bad);border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:9.5em;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.jerr.soft{background:var(--soft);color:var(--muted);font-family:inherit}
+.jact{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.jact .muted{font-size:12px;color:var(--muted);margin-left:auto;overflow-wrap:anywhere}
+.jclips{margin-top:12px}
+#upxfer:not(:empty){margin-bottom:10px}
+.bar{height:6px;border-radius:3px;background:var(--soft-2);overflow:hidden;margin-top:9px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .2s}
+.btn.danger{background:var(--bad-soft);color:var(--bad)}
+.older{margin-top:4px}
+.older > summary{list-style:none;cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600;padding:6px 0;display:flex;align-items:center;gap:6px}
+.older > summary::-webkit-details-marker{display:none}
+.older > summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;margin:0 3px 0 1px}
+.older[open] > summary::before{transform:rotate(45deg)}
+.older .jobs{margin-top:6px}
+.dropcover{position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--accent) 16%,transparent);border:3px dashed var(--accent);display:none;align-items:center;justify-content:center;pointer-events:none}
+.dropcover.on{display:flex}
+.dropcover b{background:var(--panel);color:var(--accent);padding:14px 22px;border-radius:14px;font-size:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+/* 播放器：原版 / 精剪 切换 */
+.vbox{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:100%}
+.vswitch{display:flex;gap:6px 12px;align-items:center;flex-wrap:wrap;justify-content:center;color:#e5e7eb;font-size:12.5px;font-variant-numeric:tabular-nums}
+.vswitch .seg2{background:rgba(255,255,255,.14)}
+.vswitch .seg2 button{color:#d1d5db}
+.vswitch .seg2 button.on{background:#fff;color:#111}
+.vswitch:empty{display:none}
+.vbox video{max-height:calc(88vh - 40px)}
+
+/* 窄屏：卡片里的字允许换行（放在最后，盖过上面的单行省略） */
+@media (max-width:760px){
+  .hcard{padding:10px 12px}.hcard .v{font-size:14.5px;white-space:normal;overflow-wrap:anywhere}
+  .hcard .s{white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .tile .l{white-space:normal;line-height:1.35}
+}
+/* 顶部两个标签页：直播跟播 / 手动上传剪辑；截图模式不受影响 */
+.tabs{display:inline-flex;background:var(--soft);border-radius:10px;padding:3px;gap:3px;flex:none}
+.tabs button{appearance:none;border:0;background:transparent;color:var(--muted);font-size:13.5px;font-weight:650;padding:6px 14px;border-radius:8px;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.tabs button:hover{color:var(--ink)}
+.tabs button.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.tbadge{font-size:11px;font-weight:700;line-height:1;padding:3px 6px;border-radius:999px;background:var(--accent);color:#fff;font-variant-numeric:tabular-nums}
+.tbadge:empty{display:none}
+.tbadge.live{background:var(--bad)}
+@media (max-width:640px){.tabs{order:5;width:100%}.tabs button{flex:1;justify-content:center}}
+body:not(.shot)[data-tab=live] #upPanel{display:none !important}
+.evrow{display:flex;gap:8px}.evrow input{flex:1;min-width:0;font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+body:not(.shot)[data-tab=live] #notePanel{display:block}
+body:not(.shot)[data-tab=upload] :is(#notePanel,#health,#pipePanel,#session,#decPanel,#wallPanel,#eventsPanel,#syncPanel,#probsPanel){display:none !important}
+
+/* 截图模式 ?only=…：只留指定的几块，铺满一列 */
+body.shot main{grid-template-columns:minmax(0,1fr);max-width:1180px}
+body.shot header{position:static}
+body.shot .col > *{display:none !important}
+body.shot .col > .keep{display:block !important}
+body.shot .col > .health.keep{display:grid !important}
+</style>
+</head>
+<body>
+<header id="hdr">
+  <h1 data-i18n="title"></h1>
+  <span class="sub"><span class="dot" id="conn"></span><span id="updated"></span></span>
+  <span id="mockflag"></span>
+  <nav class="tabs" id="tabs"><button data-tab="live"><span data-i18n="tabLive"></span><span class="tbadge" id="tbLive"></span></button><button data-tab="upload"><span data-i18n="tabUpload"></span><span class="tbadge" id="tbUp"></span></button></nav>
+  <div class="right">
+    <span class="bj" id="bj"></span>
+    <span class="seg2"><button data-lang="zh">中文</button><button data-lang="en">EN</button></span>
+  </div>
+</header>
+<div id="err"></div>
+<main>
+  <div class="col">
+    <div class="health" id="health"></div>
+    <section class="panel" id="pipePanel">
+      <h2><span data-i18n="pipeline"></span> <span class="meta" id="nowstep"></span></h2>
+      <div class="pipe" id="steps"></div>
+    </section>
+    <section class="panel" id="notePanel">
+      <h2><span data-i18n="evTitle"></span> <span class="meta" data-i18n="evHint"></span></h2>
+      <div class="evrow"><input type="text" id="evNote" maxlength="200" autocomplete="off"><button class="btn" id="evSave" data-i18n="evSave"></button></div>
+    </section>
+    <section class="panel" id="session"></section>
+    <section class="panel" id="decPanel">
+      <h2><span data-i18n="decisions"></span> <span class="meta" id="decmeta"></span></h2>
+      <div id="decnow"></div>
+      <div id="dec"></div>
+    </section>
+    <section class="panel" id="wallPanel">
+      <h2><span data-i18n="clipsTitle"></span> <span class="meta" id="clipmeta"></span></h2>
+      <div id="wall"></div>
+    </section>
+    <section class="panel" id="upPanel">
+      <h2><span data-i18n="upTitle"></span> <span class="meta" id="upmeta"></span></h2>
+      <div class="upgrid">
+        <label class="drop" id="drop">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+          <b data-i18n="upDrop"></b><span id="upexts"></span>
+          <input type="file" id="upfile" multiple accept="video/*,.mp4,.mov,.ts,.mkv,.flv,.m4v,.webm">
+        </label>
+        <div class="upopts">
+          <label class="f"><span data-i18n="upTitleLbl"></span><input type="text" id="upTitle" maxlength="60" autocomplete="off"></label>
+          <div class="row2">
+            <label class="f"><span data-i18n="upTopLbl"></span><select id="upTop"></select></label>
+            <label class="tg"><input type="checkbox" id="upTight" checked> <span data-i18n="upTight"></span></label>
+            <label class="tg"><input type="checkbox" id="upBurn" checked> <span data-i18n="upBurn"></span></label>
+          </div>
+          <label class="f"><span data-i18n="upNoteLbl"></span><textarea id="upNote" maxlength="500" rows="2"></textarea></label>
+          <div class="uphint" data-i18n="upHint"></div>
+        </div>
+      </div>
+      <div class="jobs" id="upxfer"></div>
+      <div id="upjobs"></div>
+    </section>
+  </div>
+  <div class="col">
+    <section class="panel" id="costPanel" style="display:none">
+      <h2><span data-i18n="cost"></span> <button class="eye" id="eye"></button> <span class="meta" id="costmeta"></span></h2>
+      <div id="cost"></div>
+    </section>
+    <section class="panel" id="queuePanel">
+      <h2><span data-i18n="queue"></span> <span class="meta" id="qmeta"></span></h2>
+      <div class="list" id="queue"></div>
+    </section>
+    <section class="panel" id="eventsPanel">
+      <h2><span data-i18n="events"></span> <span class="meta" data-i18n="newestFirst"></span></h2>
+      <div class="feed" id="feed"></div>
+    </section>
+    <section class="panel" id="pubPanel">
+      <h2 data-i18n="published"></h2>
+      <div class="list" id="pub"></div>
+    </section>
+    <section class="panel" id="syncPanel">
+      <h2><span data-i18n="sync"></span> <span class="meta" id="syncmeta"></span></h2>
+      <div class="list" id="ups"></div>
+    </section>
+    <section class="panel" id="probsPanel">
+      <h2 data-i18n="attention"></h2>
+      <div class="list" id="probs"></div>
+    </section>
+  </div>
+</main>
+<div class="modal" id="vmodal"><button class="xbtn" data-xv aria-label="close">×</button><div class="vbox"><div class="vswitch" id="vswitch"></div><video id="player" controls playsinline></video></div></div>
+<div class="dropcover" id="dropcover"><b data-i18n="upRelease"></b></div>
+<div class="modal" id="pmodal"><div class="dlg" id="dlg"></div></div>
+<div class="toast" id="toast"></div>
+<div class="tip" id="tip"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+let LAST = null;
+let TZ = 'Asia/Shanghai', TZL = '北京', PUB_ON = {douyin: false, bili: false};   // 由 /api/status 的 tz / publish_enabled 覆盖
+const ALLCLIPS = new Map();   // 片子编号 → 卡片数据（本场出片 + 手动上传），发布弹窗用
+
+// ---------- 中英文 ----------
+const L = {
+  zh: {
+    title: '切片后台状态', updated: (t) => `更新于 ${t} · 每 5 秒刷新`, connecting: '连接中…', cantConnect: '连不上面板服务：', stale: '（显示的是上次拿到的数据）',
+    pipeline: '流水线', decisions: '选段决策', clipsTitle: '本场出片', cost: '花费', queue: '发布队列', events: '事件',
+    newestFirst: '最新在上', published: '发布记录', sync: '云端同步', attention: '待注意',
+    bj: () => TZL, local: '本地', douyin: '抖音', bili: 'B站',
+    recServer: '录制服务器', cantReach: '连不上', recording: (e) => `录制中 ${e}`, standby: '待机（没人开播）',
+    watching: (n) => `盯 ${n} 个直播间`, cloudSync: '云端同步', latest: (t) => `最近 ${t}`, none: '还没有',
+    editor: '剪辑机', running: '剪辑中', standbyEd: '待命', notRunning: '没在运行', uptime: (u) => `已运行 ${u}`, paused: '剪辑暂停，开机后自动补上',
+    doing: '正在做', idleWait: '空闲，等新内容', elapsed: (e) => `已 ${e}`, lastStep: (t) => `上一步 ${t}`,
+    nowDoing: (s) => `正在：${s}`, recWaiting: '录制中，等下一段', idle: '空闲',
+    live: '直播', noSession: '还没有跟播记录', noSessionHint: '有人开播后，这里会显示录制进度、选段时间轴和出片。',
+    startedAt: (t) => `${TZL}时间 ${t} 开播`, ended: '已结束', wrapping: '收尾中', waitingNew: '等新内容',
+    tDur: '时长', transcribed: (n) => `已转写 ${n} 段`, rounds: '轮', roundsLbl: '选段轮次', pickedTo: (t) => `已挑到 ${t}`, allPicked: '整场都挑完了',
+    nextIn: '分钟', nextLbl: (t) => `后开始下一轮（字幕到 ${t}）`, nextSoon: '马上开始下一轮', candPicked: '候选里选中的',
+    stateWrap: '收尾中', stateWrapL: '已下播，处理剩下的部分', clipsN: '条', clipsLbl: (p, t) => `已发布 ${p} · 待发布 ${t}`,
+    dur: (h, m) => h ? `${h}小时${m ? m + '分' : ''}` : `${m}分钟`, durHTML: (h, m) => h ? `${h}<small>小时</small>${m}<small>分</small>` : `${m}<small>分钟</small>`,
+    flagPicked: (t) => `已挑到 ${t}`, flagNow: (t) => `现在 ${t}`, flagNowAll: (t) => `现在 ${t} · 已挑完`, flagNext: (t) => `下一轮 ${t}`,
+    flagEnd: (d) => `已结束 · ${d}`, flagWrap: (d) => `已下播 · ${d}`, flagPaused: (t) => `录到 ${t}`,
+    segN: (n) => `第 ${n} 段`, roundN: (n) => `第 ${n} 轮`, legendTranscribed: '已转写', legendFallback: '备用识别', legendFuture: '还没录到',
+    legendScore: (s) => s, legendPub: '实心 = 已发布，浅色 = 未发布', deferredLbl: '留到下一轮',
+    dec: {picked: '选中', deferred: '留到下一轮', overlap: '重叠跳过', dropped: '规则筛掉', unknown: '未采用'},
+    picking: (r) => `正在挑第 ${r} 轮：读这段字幕，找能单独成片的段落`, cutting: (r, n, t) => `正在剪第 ${r} 轮的 ${n} 条：${t}`,
+    allDone: '整场已结束，所有轮次都处理完了', waitNext: (t) => `等字幕到 ${t} 开始下一轮`, leftOver: (n, t) => `；上一轮留下 ${n} 条等着再比：${t}`,
+    seenPicked: (a, b) => `共看了 ${a} 个候选，选中 ${b}`, candN: (n) => `候选 ${n} 条`, notYet: '还没挑过',
+    hook: '开头预告', whyPick: '为什么挑它', ctxCheck: '断章取义检查', minRange: (a, b, d) => `第 ${a}–${b} 分钟 · ${d} 秒`, risky: '有争议',
+    score: (s) => `${s}分`, scoreTip: '选段打分', sep: '、',
+    st: {done: '✓', pending: '排队', running: '发布中', failed: '✗', waiting: '等待重试'}, publishing: '正在发布', todo: '待发布', done: '已发布',
+    byScore: '按分数', byTime: '按时间', noClips: '这场还没出片', publishingBtn: '发布中…', publishBtn: '发布',
+    publishTo: (p) => `发布到${p}`, bothDone: '两边都发了', ribbon: '发布中', duet: '连麦', solo: '单人', roundShort: (r) => `第${r}轮`,
+    controversial: '争议', qa: (l) => `质检${l}`, showAll: (n) => `显示全部 ${n} 条`, showLess: '收起',
+    costSession: '本场', perClip: (v) => ` · 每条 ${v}`, today: '今天', week: '近 7 天', byStep: (w) => `${w}按环节`, times: (n) => `${n}次`,
+    total: '全部累计：', hide: '隐藏金额', show: '显示金额',
+    inProgress: (n) => `${n} 条进行中`, waitingN: (n, t) => `${n} 条等待重试（${t}）`, queueEmpty: '在出片卡片上点「发布」排进来', cancelled: '（已取消）', retryAt: (t) => `到点再试：${t}`,
+    now: '立即', at: (t) => `定时 ${t}`, spent: (v) => `花费 $${v}`, retry: '重试没成功的平台', cancel: '取消',
+    reading: '读取文案…', confirmTitle: '发布确认', pubOff: '发布未开启', publishedBefore: '（已发过）', pubNow: '立即发布', pubAt: () => `定时（${TZL}时间）`,
+    fullLbl: '完整版', fullPending: '下播后生成完整版（整场录屏 + 字幕）', fullVideo: '▶ 看整场录屏', fullSrt: '字幕', cloudOk: '☁ 已存云盘', cloudFail: '☁ 云盘没传上', cloudWait: '☁ 正在存云盘',
+    confirm: '确认发布', queued: '已排进发布队列', requeued: '已重新排队', cancelledToast: '已取消',
+    tipClip: (c) => `${c.n} ${c.title}\n${c.range} · ${c.dur}秒 · ${c.score}\n第 ${c.round} 轮 · ${c.pub}`, tipPub: '已发布', tipUnpub: '还没发布', tipSeg: (n, a, b, fb) => `第 ${n} 段 · ${a}–${b}${fb ? ' · 备用识别' : ''}`,
+    verPlain: '原版', verTight: '精剪', verDiff: (a, b, p) => `原版 ${a}秒 · 精剪 ${b}秒（${p}）`, tightChip: (s) => `精剪 ${s}s`,
+    upTitle: '手动上传剪辑', upDrop: '拖视频到这里，或点击选择', upExts: (e) => `${e} · 可多选，一个个排队`, upRelease: '松手上传，自动剪成片',
+    upTitleLbl: '标题（留空用文件名）', upTopLbl: '出几条', upTopAuto: '自动（约每 10 分钟 1 条）', upTopN: (n) => `${n} 条`,
+    upTight: '精剪', upBurn: '烧字幕', upNoteLbl: '给选段的说明（可不填）',
+    upHint: '竖屏按直播回放剪（分人识别、逐段判单人/连麦）；横屏按横屏访谈剪。一次拖多个时都用各自的文件名当标题。',
+    upMeta: (g, w) => `硬盘剩 ${g} GB · 小工人${w ? '在跑' : '空闲'}`, upOld: '面板服务端还是旧版，重启面板服务后才能上传。',
+    upNone: '还没有上传过。拖一个直播录屏进来，剪好的片子会出现在这里，可以直接发布。',
+    upBadType: (e) => `不支持「${e || '没有扩展名'}」，只收视频文件`, upEmpty: '文件是空的', upWait: '等待上传', upSending: '上传中',
+    upChecking: '检查中…', upSent: '已上传，排进剪辑队列', upAbort: '取消上传', upAborted: '已取消上传', upFail: '上传失败：',
+    upSpeed: (v, eta) => `${v}/s · 还要 ${eta}`,
+    js: {pending: '排队中', running: '剪辑中', done: '完成', failed: '失败', cancelled: '已停止'},
+    jstep: {remux: '转 mp4', asr: '识别', review: '校对', pick: '选段', cut: '剪辑', cover: '封面', qa: '质检', tight: '精剪'},
+    jVert: '竖屏', jHoriz: '横屏', jTop: (n, auto) => `${n} 条${auto ? '（自动）' : ''}`, jTight: '精剪', jBurn: '烧字幕', jNoBurn: '不烧字幕',
+    jQueuePos: (n) => n > 1 ? `前面还有 ${n - 1} 个` : '下一个就是它', jElapsed: (t) => `已 ${t}`, jTook: (t) => `用时 ${t}`, jAt: (t) => `${t} 上传`,
+    jClips: (n) => `出了 ${n} 条`, jNoClips: '没剪出片子（可能字幕里没有能单独成片的段落）', jRetried: (n) => `重试 ${n} 次`,
+    jRetry: '重试', jStop: '停止', jStopping: '正在停止…', jCancel: '取消排队', jDelete: '删除', jCost: (u, c) => `花费 $${u} · ¥${c}`,
+    jOlder: (n) => `更早的 ${n} 个任务`, jDelTitle: '删除这个任务？', jDelBody: (dir) => `任务从列表里去掉，上传的原视频挪进废纸篓；已经剪好的片子留在 ${dir}，不会删。`,
+    jDeleted: '已删除', jRequeued: '已重新排队', jStopReq: '正在停止', jCancelled: '已取消',
+    cat: {}, lyt: {},
+  },
+  en: {
+    title: 'Clip Pipeline Status', updated: (t) => `Updated ${t} · refreshes every 5s`, connecting: 'Connecting…', cantConnect: 'Cannot reach dashboard server: ', stale: ' (showing last data received)',
+    pipeline: 'Pipeline', decisions: 'Clip Selection', clipsTitle: 'Clips This Stream', cost: 'Cost', queue: 'Publish Queue', events: 'Events',
+    newestFirst: 'newest first', published: 'Published', sync: 'Cloud Sync', attention: 'Needs Attention',
+    bj: () => TZL, local: 'Local', douyin: 'Douyin', bili: 'Bilibili',
+    recServer: 'Recorder', cantReach: 'Unreachable', recording: (e) => `Recording ${e}`, standby: 'Standby (no one live)',
+    watching: (n) => `Watching ${n} rooms`, cloudSync: 'Cloud sync', latest: (t) => `Last ${t}`, none: 'None yet',
+    editor: 'Editor', running: 'Working', standbyEd: 'Standby', notRunning: 'Not running', uptime: (u) => `Up ${u}`, paused: 'Editing paused; resumes when online',
+    doing: 'Now doing', idleWait: 'Idle, waiting for content', elapsed: (e) => `${e} elapsed`, lastStep: (t) => `Last step ${t}`,
+    nowDoing: (s) => `Now: ${s}`, recWaiting: 'Recording, waiting for next segment', idle: 'Idle',
+    live: 'Live', noSession: 'No live session yet', noSessionHint: 'When a stream starts, recording progress, the selection timeline and clips show up here.',
+    startedAt: (t) => `started ${t} (${TZ})`, ended: 'Ended', wrapping: 'Wrapping up', waitingNew: 'Waiting for content',
+    tDur: 'Length', transcribed: (n) => `${n} segments transcribed`, rounds: 'rounds', roundsLbl: 'Selection rounds', pickedTo: (t) => `picked up to ${t}`, allPicked: 'whole stream picked',
+    nextIn: 'min', nextLbl: (t) => `until next round (at ${t})`, nextSoon: 'next round starting', candPicked: 'candidates picked',
+    stateWrap: 'Wrapping up', stateWrapL: 'off air, finishing the rest', clipsN: 'clips', clipsLbl: (p, t) => `${p} published · ${t} to publish`,
+    dur: (h, m) => h ? `${h}h ${m}m` : `${m} min`, durHTML: (h, m) => h ? `${h}<small>h</small> ${m}<small>m</small>` : `${m}<small>min</small>`,
+    flagPicked: (t) => `picked to ${t}`, flagNow: (t) => `now ${t}`, flagNowAll: (t) => `now ${t} · all picked`, flagNext: (t) => `next round ${t}`,
+    flagEnd: (d) => `Ended · ${d}`, flagWrap: (d) => `Off air · ${d}`, flagPaused: (t) => `recorded to ${t}`,
+    segN: (n) => `Segment ${n}`, roundN: (n) => `Round ${n}`, legendTranscribed: 'Transcribed', legendFallback: 'Fallback ASR', legendFuture: 'Not recorded yet',
+    legendScore: (s) => s, legendPub: 'solid = published, faded = not yet', deferredLbl: 'Deferred',
+    dec: {picked: 'Picked', deferred: 'Deferred', overlap: 'Overlap', dropped: 'Filtered', unknown: 'Not used'},
+    picking: (r) => `Picking round ${r}: reading the transcript for self-contained moments`, cutting: (r, n, t) => `Cutting ${n} clips from round ${r}: ${t}`,
+    allDone: 'Stream finished — every round processed', waitNext: (t) => `Next round starts when the transcript reaches ${t}`, leftOver: (n, t) => `; ${n} deferred from last round: ${t}`,
+    seenPicked: (a, b) => `${a} candidates reviewed, ${b} picked`, candN: (n) => `${n} candidates`, notYet: 'Nothing picked yet',
+    hook: 'Opening hook', whyPick: 'Why this moment', ctxCheck: 'Out-of-context check', minRange: (a, b, d) => `min ${a}–${b} · ${d}s`, risky: 'controversial',
+    score: (s) => `${s}/10`, scoreTip: 'selection score', sep: ', ',
+    st: {done: '✓', pending: 'queued', running: 'publishing', failed: '✗', waiting: 'retry later'}, publishing: 'Publishing', todo: 'To publish', done: 'Published',
+    byScore: 'Score', byTime: 'Newest', noClips: 'No clips yet', publishingBtn: 'Publishing…', publishBtn: 'Publish',
+    publishTo: (p) => `Publish to ${p}`, bothDone: 'Published on both', ribbon: 'Publishing', duet: 'split-screen', solo: 'solo', roundShort: (r) => `R${r}`,
+    controversial: 'Controversial', qa: (l) => `QA ${l}`, showAll: (n) => `Show all ${n}`, showLess: 'Show less',
+    costSession: 'This stream', perClip: (v) => ` · ${v}/clip`, today: 'Today', week: 'Last 7 days', byStep: (w) => `${w} by step`, times: (n) => `${n}×`,
+    total: 'All time: ', hide: 'Hide amounts', show: 'Show amounts',
+    inProgress: (n) => `${n} in progress`, waitingN: (n, t) => `${n} waiting to retry (${t})`, queueEmpty: 'Click “Publish” on a clip card to queue it', cancelled: ' (cancelled)', retryAt: (t) => `retry at ${t}`,
+    now: 'Now', at: (t) => `Scheduled ${t}`, spent: (v) => `Cost $${v}`, retry: 'Retry failed platforms', cancel: 'Cancel',
+    reading: 'Loading captions…', confirmTitle: 'Confirm publish', pubOff: 'Publishing off', publishedBefore: ' (already published)', pubNow: 'Publish now', pubAt: () => `Schedule (${TZ})`,
+    fullLbl: 'Full recording', fullPending: 'Full recording + subtitles appear after the stream ends', fullVideo: '▶ Watch full stream', fullSrt: 'Subtitles', cloudOk: '☁ Saved to cloud', cloudFail: '☁ Cloud upload failed', cloudWait: '☁ Saving to cloud',
+    confirm: 'Confirm', queued: 'Added to publish queue', requeued: 'Re-queued', cancelledToast: 'Cancelled',
+    tipClip: (c) => `#${c.n} ${c.title}\n${c.range} · ${c.dur}s · ${c.score}\nround ${c.round} · ${c.pub}`, tipPub: 'published', tipUnpub: 'not published', tipSeg: (n, a, b, fb) => `Segment ${n} · ${a}–${b}${fb ? ' · fallback ASR' : ''}`,
+    cat: {'开场论点': 'Opening claim', '自创比喻': 'Original metaphor', '极端推演': 'Bold extrapolation', '真人或数字': 'Names & numbers',
+          '亲身经历': 'Personal story', '干货清单': 'Practical tips', '引战点': 'Hot take'},
+    lyt: {},
+    verPlain: 'Original', verTight: 'Tight', verDiff: (a, b, p) => `Original ${a}s · Tight ${b}s (${p})`, tightChip: (s) => `Tight ${s}s`,
+    upTitle: 'Upload & auto-clip', upDrop: 'Drop videos here, or click to choose', upExts: (e) => `${e} · multiple files are queued`, upRelease: 'Drop to upload and auto-clip',
+    upTitleLbl: 'Title (blank = file name)', upTopLbl: 'Clips', upTopAuto: 'Auto (~1 per 10 min)', upTopN: (n) => `${n} clips`,
+    upTight: 'Tight edit', upBurn: 'Burn subtitles', upNoteLbl: 'Note for the clip picker (optional)',
+    upHint: 'Vertical videos are cut as livestream replays (speaker diarization, solo/split-screen per clip); horizontal ones as interviews. With several files, each uses its own file name as title.',
+    upMeta: (g, w) => `${g} GB free · worker ${w ? 'running' : 'idle'}`, upOld: 'The dashboard server is still the old version; restart it to enable uploads.',
+    upNone: 'Nothing uploaded yet. Drop a stream recording here — finished clips show up below, ready to publish.',
+    upBadType: (e) => `“${e || 'no extension'}” is not supported — video files only`, upEmpty: 'File is empty', upWait: 'Waiting', upSending: 'Uploading',
+    upChecking: 'Checking…', upSent: 'Uploaded, queued for clipping', upAbort: 'Cancel upload', upAborted: 'Upload cancelled', upFail: 'Upload failed: ',
+    upSpeed: (v, eta) => `${v}/s · ${eta} left`,
+    js: {pending: 'Queued', running: 'Clipping', done: 'Done', failed: 'Failed', cancelled: 'Stopped'},
+    jstep: {remux: 'Remux', asr: 'ASR', review: 'Review', pick: 'Pick', cut: 'Cut', cover: 'Covers', qa: 'QA', tight: 'Tight edit'},
+    jVert: 'vertical', jHoriz: 'horizontal', jTop: (n, auto) => `${n} clips${auto ? ' (auto)' : ''}`, jTight: 'tight edit', jBurn: 'burned subs', jNoBurn: 'no subs',
+    jQueuePos: (n) => n > 1 ? `${n - 1} ahead` : 'next up', jElapsed: (t) => `${t} elapsed`, jTook: (t) => `took ${t}`, jAt: (t) => `uploaded ${t}`,
+    jClips: (n) => `${n} clip${n === 1 ? '' : 's'}`, jNoClips: 'No clips came out (no self-contained moments found)', jRetried: (n) => `retried ${n}×`,
+    jRetry: 'Retry', jStop: 'Stop', jStopping: 'Stopping…', jCancel: 'Cancel', jDelete: 'Delete', jCost: (u, c) => `Cost $${u} · ¥${c}`,
+    jOlder: (n) => `${n} older jobs`, jDelTitle: 'Delete this job?', jDelBody: (dir) => `The job is removed from the list and the uploaded video goes to the Trash. Finished clips stay in ${dir}.`,
+    jDeleted: 'Deleted', jRequeued: 'Re-queued', jStopReq: 'Stopping', jCancelled: 'Cancelled',
+  },
+};
+Object.assign(L.zh, {evTitle: '今天的事件 / 联动', evHint: '写一句（如「今天和某某连麦」），下一轮选段优先挑相关段落；不用时清空', evSave: '保存', evSaved: '已保存，下一轮生效', evCleared: '已清空'});
+Object.assign(L.en, {evTitle: "Today's event / collab", evHint: 'One line; the next picking round prioritizes related moments. Clear when done.', evSave: 'Save', evSaved: 'Saved — applies next round', evCleared: 'Cleared'});
+Object.assign(L.zh, {tabLive: '直播跟播', tabUpload: '手动上传剪辑', tbLiveOn: '直播中'});
+Object.assign(L.en, {tabLive: 'Live clipping', tabUpload: 'Upload & clip', tbLiveOn: 'LIVE'});
+let LANG = 'zh';
+try { LANG = localStorage.getItem('lang') || (navigator.language.startsWith('zh') ? 'zh' : 'en'); } catch (e) {}
+const QP = new URLSearchParams(location.search);
+if (['zh', 'en'].includes(QP.get('lang'))) LANG = QP.get('lang');   // 截图 / 分享链接用
+const T = (k, ...a) => { const v = (L[LANG] || L.zh)[k] ?? L.zh[k]; return typeof v === 'function' ? v(...a) : v ?? k; };
+const PLAT = p => T(p);
+// 时长：7小时22分 / 7h 22m；时间轴刻度：短场用 42′，长场用 1:30
+const hmParts = m => { m = Math.max(0, Math.round(m)); return [Math.floor(m / 60), m % 60]; };
+const fmtDur = m => T('dur', ...hmParts(m));
+const durHTML = m => T('durHTML', ...hmParts(m));
+const fmtHM = m => { const [h, r] = hmParts(m); return `${h}:${pad(r)}`; };
+const fmtHMS = m => { const t = Math.round(m * 60); return `${Math.floor(t / 3600)}:${pad(Math.floor(t / 60) % 60)}:${pad(t % 60)}`; };
+let tfmt = fmtHM;   // drawTimeline 按场长切换
+const hms = m => { const s = Math.round(m * 60); return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; };
+
+function applyStatic(){
+  document.documentElement.lang = LANG === 'en' ? 'en' : 'zh-CN';
+  document.title = T('title');
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = T(el.dataset.i18n));
+  document.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('on', b.dataset.lang === LANG));
+  if (!LAST) $('updated').textContent = T('connecting');
+  fillTop(); renderXfer();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-lang]'); if (!b) return;
+  LANG = b.dataset.lang; try { localStorage.setItem('lang', LANG); } catch (err) {}
+  applyStatic(); clock(); tick();
+});
+
+// 当天事件：存到 data/live_note.txt，跟播每轮选段现读
+$('evSave').addEventListener('click', async () => {
+  const text = $('evNote').value.trim();
+  try {
+    const r = await fetch('/api/livenote', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({text})});
+    toast(r.ok ? T(text ? 'evSaved' : 'evCleared') : (await r.json()).error);
+  } catch (e) { toast(String(e)); }
+});
+$('evNote').addEventListener('keydown', e => { if (e.key === 'Enter') $('evSave').click(); });
+
+// 顶部标签页：#upload / #live 或上次选的
+let TAB = 'live';
+try { TAB = localStorage.getItem('tab') || 'live'; } catch (e) {}
+if (/^#(live|upload)$/.test(location.hash)) TAB = location.hash.slice(1);
+function setTab(t){
+  TAB = t; document.body.dataset.tab = t;
+  document.querySelectorAll('button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  try { localStorage.setItem('tab', t); } catch (e) {}
+  if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+}
+document.addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) { setTab(b.dataset.tab); scrollTo(0, 0); } });
+setTab(TAB);
+
+// 花费：闭眼（遮住金额）/ 睁眼
+let COST_HIDDEN = false;
+try { COST_HIDDEN = localStorage.getItem('costHidden') === '1'; } catch (e) {}
+const EYE_ON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+function applyEye(){
+  $('costPanel').classList.toggle('masked', COST_HIDDEN);
+  $('eye').innerHTML = COST_HIDDEN ? EYE_OFF : EYE_ON;
+  $('eye').title = COST_HIDDEN ? T('show') : T('hide');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#eye')) return;
+  COST_HIDDEN = !COST_HIDDEN; try { localStorage.setItem('costHidden', COST_HIDDEN ? '1' : '0'); } catch (err) {}
+  applyEye(); if (LAST) { safe(renderCosts, LAST); safe(renderQueue, LAST); safe(renderUploads, LAST); }
+});
+
+function hcard(k, v, s, state){
+  return `<div class="hcard"><div class="k"><span class="dot ${state}"></span>${esc(k)}</div><div class="v" title="${esc(v)}">${esc(v)}</div><div class="s" title="${esc(s)}">${esc(s)}</div></div>`;
+}
+
+function renderHealth(d){
+  const v = d.rec || {}, m = d.editor || {};
+  const live = (v.live || [])[0], lastUp = (v.uploads || []).slice(-1)[0], cur = m.current;
+  $('health').innerHTML =
+    hcard(T('recServer'), v.error ? T('cantReach') : live ? T('recording', live.elapsed) : T('standby'),
+          v.error ? v.error : `${live ? live.name : T('watching', v.watching ?? '?')}${v.note ? ' · ' + v.note : ''}`,
+          v.error || v.ok === false ? 'bad' : live ? 'on pulse' : '') +
+    hcard(T('cloudSync'), lastUp ? T('latest', lastUp.t.slice(6, 11)) : '—', lastUp ? lastUp.msg.split('/').pop() : T('none'),
+          v.sync_ok ? 'on' : (v.checked ? 'bad' : '')) +
+    hcard(T('editor'), m.running ? T(cur ? 'running' : 'standbyEd') : T('notRunning'), m.running ? T('uptime', m.uptime) + (m.note ? ' · ' + m.note : '') : T('paused'),
+          m.running ? (m.warn ? 'warn' : 'on') : 'bad') +
+    hcard(T('doing'), d.step_name || (m.running ? T('idleWait') : '—'),
+          cur ? T('elapsed', cur.elapsed) : (m.last_log ? T('lastStep', m.last_log.slice(6)) : ''), cur ? 'on pulse' : '');
+}
+
+function renderPipeline(d){
+  const live = ((d.rec || {}).live || [])[0];
+  $('steps').innerHTML = (d.pipeline || []).map((s, i) => {
+    const inner = s.state === 'done' ? '✓' : String(i + 1);
+    return `<div class="node ${s.state}"><div class="ring">${inner}</div><div class="lbl">${esc(s.name)}</div><div class="tm">${esc(s.t)}</div></div>`;
+  }).join('');
+  const cur = (d.editor || {}).current;
+  $('nowstep').textContent = d.step_name ? T('nowDoing', d.step_name + (cur ? ' · ' + cur.elapsed : '')) : (live ? T('recWaiting') : T('idle'));
+}
+
+// ---------- 本场 ----------
+const isLive = (ses, d) => !!(((d.rec || {}).live || [])[0]) && !ses.ended;
+const scoreCls = s => s >= 9 ? 's9' : s >= 8 ? 's8' : 's7';
+const isPub = c => Object.keys(c.published || {}).length > 0;
+
+function renderSession(ses, d){
+  if (!ses){
+    $('session').innerHTML = `<h2>${T('live')}</h2><div class="empty">${T('noSession')}</div><div class="empty" style="padding-top:0">${T('noSessionHint')}</div>`;
+    return;
+  }
+  const live = isLive(ses, d);
+  const tag = ses.done ? `<span class="tag ended">${T('ended')}</span>` : ses.ended ? `<span class="tag wrap">${T('wrapping')}</span>`
+    : live ? '<span class="tag live">LIVE</span>' : `<span class="tag wait">${T('waitingNew')}</span>`;
+  const left = Math.max(0, ses.next_round_min - ses.total_min);
+  const pubN = ses.clips.filter(isPub).length;
+  const dr = (ses.decisions || {}).rounds || [], cand = dr.reduce((a, r) => a + r.items.length, 0);
+  const t3 = ses.done ? `<div class="n">${ses.clips.length}<small>/ ${cand}</small></div><div class="l">${T('candPicked')}</div>`
+    : ses.ended ? `<div class="n word" style="color:var(--warn)">${T('stateWrap')}</div><div class="l">${T('stateWrapL')}</div>`
+    : left < 0.5 ? `<div class="n word">—</div><div class="l">${T('nextSoon')}</div>`
+    : `<div class="n">${Math.ceil(left)}<small>${T('nextIn')}</small></div><div class="l" title="${esc(T('nextLbl', fmtHM(ses.next_round_min)))}">${T('nextLbl', fmtHM(ses.next_round_min))}</div>`;
+  const allPicked = ses.done || (ses.ended && ses.total_min - ses.picked_until_min < 0.5);
+  const full = ses.full && ses.full.ready
+    ? `<button class="btn" data-v="${esc(ses.full.video)}">${T('fullVideo')} · ${ses.full.size_gb}GB</button>${ses.full.srt ? `<a class="btn ghost" href="${esc(ses.full.srt)}" download="字幕.srt">${T('fullSrt')}</a>` : ''}<span class="chip ${ses.full.cloud === 'ok' ? 'good' : ses.full.cloud === 'fail' ? 'bad' : ''}">${T({ok: 'cloudOk', fail: 'cloudFail'}[ses.full.cloud] || 'cloudWait')}</span>`
+    : `<span class="chip">${T('fullPending')}</span>`;
+  $('session').innerHTML = `
+    <div class="shead">${tag}<span class="who">${esc(ses.anchor)}</span><span class="when">${T('startedAt', esc(ses.started_bj || ses.started))}</span><span class="id">${esc(ses.id || '')}</span></div>
+    <div class="tiles">
+      <div class="tile"><div class="n">${durHTML(ses.total_min)}</div><div class="l">${T('transcribed', ses.segments.length)}</div></div>
+      <div class="tile"><div class="n">${ses.rounds}<small>${T('rounds')}</small></div><div class="l">${allPicked ? T('allPicked') : T('pickedTo', fmtHM(ses.picked_until_min))}</div></div>
+      <div class="tile">${t3}</div>
+      <div class="tile"><div class="n">${ses.clips.length}<small>${T('clipsN')}</small></div><div class="l">${T('clipsLbl', pubN, ses.clips.length - pubN)}</div></div>
+    </div>
+    <div class="tl" id="tl"></div>
+    <div class="legend" id="legend"></div>
+    ${ses.deferred.length ? `<div class="chips"><span class="chip">${T('deferredLbl')}</span>${ses.deferred.map(t => `<span class="chip warn" title="${esc(t)}">${esc(t)}</span>`).join('')}</div>` : ''}
+    <div class="fullrow"><span class="lab">${T('fullLbl')}</span>${full}</div>`;
+  drawTimeline(ses, d);
+}
+
+// 时间轴：全部按像素算。刻度间隔随宽度/场长自适应；旗子标签最多两行，排不下就收起（线还在，悬停看）。
+const TICK_STEPS = [5, 10, 15, 20, 30, 60, 90, 120, 180, 240];
+function drawTimeline(ses, d){
+  const box = $('tl'); if (!box) return;
+  const W = Math.max(box.clientWidth, 200);
+  const live = isLive(ses, d);
+  const total = ses.total_min;
+  const showNext = !ses.ended && ses.next_round_min - total > 0.5;
+  // 横轴范围：结束了就正好到结尾；进行中留出到「下一轮」的位置（未录部分画成斜纹）
+  const Dmax = ses.ended ? Math.max(total, 1) : Math.max(total, showNext ? ses.next_round_min : 0, 1) * 1.03;
+  tfmt = Dmax < 90 ? (m => `${Math.round(m)}′`) : fmtHM;
+  const X = m => Math.min(Math.max(m / Dmax * W, 0), W);
+
+  // ---- 旗子 ----
+  const flags = [];
+  const pickedGap = total - ses.picked_until_min;
+  if (ses.ended) {
+    flags.push({m: total, cls: ses.done ? 'end' : 'wrap', text: ses.done ? T('flagEnd', fmtDur(total)) : T('flagWrap', fmtDur(total)), prio: 0, side: 'left'});
+    if (!ses.done && pickedGap > 0.5 && ses.picked_until_min > 0) flags.push({m: ses.picked_until_min, cls: 'picked', text: T('flagPicked', tfmt(ses.picked_until_min)), prio: 1, side: 'left'});
+  } else {
+    const merged = pickedGap < 0.5 && ses.picked_until_min > 0;
+    flags.push({m: total, cls: live ? 'now' : 'idle', text: live ? T(merged ? 'flagNowAll' : 'flagNow', tfmt(total)) : T('flagPaused', tfmt(total)), prio: 0, side: 'left'});
+    if (!merged && ses.picked_until_min > 0) flags.push({m: ses.picked_until_min, cls: 'picked', text: T('flagPicked', tfmt(ses.picked_until_min)), prio: 1, side: 'left'});
+    if (showNext) flags.push({m: ses.next_round_min, cls: 'next', text: T('flagNext', tfmt(ses.next_round_min)), prio: 2, side: 'right'});
+  }
+  box.innerHTML = '';
+  const ROWH = 24, GAP = 6, rows = [[], []];
+  let rowsUsed = 0;
+  for (const f of flags) {
+    const el = document.createElement('div');
+    el.className = 'tl-flag ' + f.cls; el.textContent = f.text; el.style.visibility = 'hidden';
+    box.appendChild(el);
+    const w = el.offsetWidth, x = X(f.m);
+    // 标签候选位置：贴在线的左边 / 右边；都放不下就贴边
+    let cands = (f.side === 'left' ? [x - w, x] : [x, x - w]).filter(l => l >= 0 && l + w <= W);
+    if (!cands.length) cands = [Math.min(Math.max(0, x - w / 2), W - w)];
+    let placed = null;
+    for (let r = 0; r < rows.length && !placed; r++)
+      for (const l of cands)
+        if (rows[r].every(([a, b]) => l + w + GAP <= a || l >= b + GAP)) { placed = {r, l}; rows[r].push([l, l + w]); break; }
+    f.x = x;
+    if (placed) { f.row = placed.r; el.style.left = placed.l + 'px'; el.style.top = placed.r * ROWH + 'px'; el.style.visibility = ''; el.dataset.row = placed.r; rowsUsed = Math.max(rowsUsed, placed.r + 1); f.el = el; }
+    else { el.remove(); f.row = null; }
+  }
+  const flagsH = rowsUsed * ROWH + 4;
+
+  // ---- 出片条：按像素分道，挤在一起时往下一道放（最多 3 道） ----
+  const LANEH = 13, MINW = 5;
+  const lanesEnd = [];
+  const pills = ses.clips.filter(c => c.start_min != null).sort((a, b) => a.start_min - b.start_min).map(c => {
+    const x0 = X(c.start_min), x1 = Math.max(X(c.end_min ?? c.start_min), x0 + MINW);
+    let lane = lanesEnd.findIndex(e => e + 2 <= x0);
+    if (lane < 0) { if (lanesEnd.length < 3) lane = lanesEnd.length; else lane = lanesEnd.indexOf(Math.min(...lanesEnd)); }
+    lanesEnd[lane] = x1;
+    return {c, x0, x1, lane};
+  });
+  const nLanes = Math.max(lanesEnd.length, 1);
+  const lanesTop = flagsH, barTop = lanesTop + nLanes * LANEH + 6, barH = 14, axisTop = barTop + barH + 8;
+  box.style.height = (axisTop + 16) + 'px';
+
+  // ---- 刻度：间隔至少 64px；两端不挤 ----
+  const step = TICK_STEPS.find(s => (s / Dmax) * W >= 64) || 240;
+  let html = '';
+  for (let t = 0; t <= Dmax + 1e-6; t += step) {
+    const x = X(t);
+    html += `<div class="tl-grid" style="left:${x}px;top:${lanesTop}px;height:${barTop - lanesTop}px"></div>`;
+    if (x > W - 22) continue;     // 太靠右边，让给结尾标签
+    const cls = t === 0 ? 'first' : '';
+    html += `<div class="tl-tick ${cls}" style="left:${x}px;top:${axisTop}px;transform:translateX(${t === 0 ? 0 : -50}%)">${tfmt(t)}</div>`;
+  }
+  if (ses.ended) html += `<div class="tl-tick last" style="right:0;top:${axisTop}px">${tfmt(total)}</div>`;
+  // 出片条
+  html += pills.map(({c, x0, x1, lane}) => {
+    const tip = T('tipClip', {n: pad(c.n), title: c.title, range: `${fmtHMS(c.start_min)}–${fmtHMS(c.end_min ?? c.start_min)}`, dur: c.dur ?? '?',
+      score: c.score != null ? T('score', c.score) : '?', round: c.round ?? '?', pub: isPub(c) ? T('tipPub') : T('tipUnpub')});
+    return `<div class="tl-pill ${isPub(c) ? '' : 'unpub'}" ${vidAttrs(c)} data-tip="${esc(tip)}"
+      style="left:${x0}px;width:${x1 - x0}px;top:${lanesTop + lane * LANEH}px;background:var(--${scoreCls(c.score ?? 0)})"></div>`;
+  }).join('');
+  // 转写进度条（分段）
+  // 分段够宽时一段一块（中间留缝）；太密就画成一整条，只把备用识别的段叠上去，避免发丝缝
+  let acc = 0;
+  const segW = ses.segments.length ? X(total) / ses.segments.length : 0, split = segW > 14;
+  let segs = split ? '' : `<div class="tl-seg" style="left:0;width:${X(total)}px" data-tip="${esc(T('transcribed', ses.segments.length) + ' · ' + tfmt(total))}"></div>`;
+  segs += ses.segments.map(s => { const a = acc; acc += s.dur / 60;
+    if (!split && !s.fallback) return '';
+    return `<div class="tl-seg ${s.fallback ? 'fb' : ''} ${split ? 'gap' : ''}" style="left:${X(a)}px;width:${Math.max(X(acc) - X(a), 1)}px" data-tip="${esc(T('tipSeg', s.n + 1, tfmt(a), tfmt(acc), s.fallback))}"></div>`; }).join('');
+  html += `<div class="tl-bar" style="top:${barTop}px">${segs}</div>`;
+  // 旗子竖线：从标签底部画到进度条底部
+  html += flags.map(f => {
+    const top = f.row == null ? lanesTop - 4 : f.row * ROWH + 20;
+    const x = Math.min(Math.max(f.x, 1), W - 1);
+    return `<div class="tl-line ${f.cls === 'idle' || f.cls === 'end' ? '' : f.cls}" style="left:${x - 1}px;top:${top}px;height:${barTop + barH + 3 - top}px"${f.row == null ? ` data-tip="${esc(f.text)}"` : ''}></div>`;
+  }).join('');
+  box.insertAdjacentHTML('beforeend', html);
+
+  // ---- 图例：只列这场真用到的 ----
+  const hasFb = ses.segments.some(s => s.fallback), scores = new Set(ses.clips.map(c => scoreCls(c.score ?? 0)));
+  $('legend').innerHTML = [
+    `<span><i style="background:linear-gradient(90deg,var(--accent),var(--accent-2))"></i>${T('legendTranscribed')}</span>`,
+    hasFb ? `<span><i style="background:var(--warn-mark)"></i>${T('legendFallback')}</span>` : '',
+    !ses.ended ? `<span><i style="background:repeating-linear-gradient(135deg,var(--soft) 0 3px,var(--soft-2) 3px 6px);border:1px solid var(--line)"></i>${T('legendFuture')}</span>` : '',
+    ...['s9', 's8', 's7'].filter(s => scores.has(s)).map(s => `<span><i style="background:var(--${s})"></i>${T('score', {s9: '9+', s8: '8', s7: '≤7'}[s])}</span>`),
+    ses.clips.length ? `<span>${T('legendPub')}</span>` : '',
+  ].join('');
+}
+
+// ---------- 选段决策 ----------
+const OPEN = new Set(), ROUND_OPEN = new Map();   // 记住手动展开/收起，刷新时保持
+document.addEventListener('click', e => {        // 只认点击，不认渲染时浏览器自己触发的 toggle
+  const s = e.target.closest('summary'); if (!s) return;
+  const d = s.parentElement;
+  if (d.dataset.rk) ROUND_OPEN.set(d.dataset.rk, !d.open);
+  if (d.dataset.k) (!d.open ? OPEN.add(d.dataset.k) : OPEN.delete(d.dataset.k));
+}, true);
+function renderDecisions(ses){
+  const dd = ses && ses.decisions;
+  if (!dd){ $('decnow').innerHTML = ''; $('decmeta').textContent = ''; $('dec').innerHTML = `<div class="empty">${T('none')}</div>`; return; }
+  const now = dd.now || {}, DEC = T('dec');
+  $('decnow').innerHTML = now.kind === 'picking' ? `<div class="nowbar"><span class="spin"></span>${T('picking', now.round)}</div>`
+    : now.kind === 'cutting' ? `<div class="nowbar"><span class="spin"></span><span>${esc(T('cutting', now.round, dd.cutting.length, dd.cutting.map(c => c.title).join(T('sep'))))}</span></div>`
+    : now.kind === 'done' ? `<div class="nowbar ok">✓ ${T('allDone')}</div>`
+    : `<div class="nowbar idle">${T('waitNext', fmtHM(now.next_min || 0))}${dd.pending_deferred.length ? esc(T('leftOver', dd.pending_deferred.length, dd.pending_deferred.join(T('sep')))) : ''}</div>`;
+  const total = dd.rounds.reduce((a, r) => a + r.items.length, 0), picked = dd.rounds.reduce((a, r) => a + r.count.picked, 0);
+  $('decmeta').textContent = total ? T('seenPicked', total, picked) : '';
+  const latest = dd.rounds.length ? dd.rounds[0].r : 0;
+  $('dec').innerHTML = dd.rounds.length ? dd.rounds.map(r => {
+    const c = r.count;
+    const sum = ['picked', 'deferred', 'overlap', 'dropped', 'unknown'].filter(k => k === 'picked' || c[k]).map(k => `${DEC[k]} ${c[k]}`).join(' · ');
+    const rk = `round-${r.r}`, isOpen = ROUND_OPEN.has(rk) ? ROUND_OPEN.get(rk) : r.r === latest;
+    const pills = r.items.filter(x => x.decision === 'picked').map(x => x.n ? `<span class="badge picked">${pad(x.n)}</span>` : '').join('');
+    return `<details class="round" data-rk="${rk}" ${isOpen ? 'open' : ''}><summary class="rhead"><b>${T('roundN', r.r)}</b><span class="sum">${T('candN', r.items.length)} → ${sum}</span><span class="pills">${pills}</span></summary>
+      ${r.items.map(it => { const k = `${r.r}-${it.title}`;
+        const hook = it.hook ? `<div><div class="k">${T('hook')}${it.hook.type ? ' · ' + esc(it.hook.type) : ''}</div>${it.hook.why ? `<div>${esc(it.hook.why)}</div>` : ''}
+          <div class="hooks">${(it.hook.cands || []).map((h, j) => `<div class="hk ${j === 0 ? 'best' : ''}"><q>${esc(h.text)}</q> <span class="score">${h.score ?? '?'}</span><div style="color:var(--muted)">${esc(h.reason)}</div></div>`).join('')}</div></div>` : '';
+        const cat = it.category ? (T('cat')[it.category] || it.category) : '';
+        return `<details class="dec" data-k="${esc(k)}" ${OPEN.has(k) ? 'open' : ''}><summary>
+          <span class="badge ${it.decision}">${DEC[it.decision]}</span>
+          <span class="tt"><b title="${esc(it.title)}">${it.n ? pad(it.n) + ' ' : ''}${esc(it.title)}</b><div title="${esc(it.reason)}">${esc(it.reason)}</div></span>
+          <span class="score" title="${T('scoreTip')}">${T('score', it.score ?? '?')}</span></summary>
+          <div class="detail">
+            <div class="m">${it.start_min != null ? T('minRange', it.start_min, it.end_min, it.dur) : ''}${cat ? ' · ' + esc(cat) : ''}${it.risky ? ` · <span style="color:var(--warn)">${T('risky')}</span>` : ''}${(it.tags || []).length ? ' · ' + it.tags.map(esc).join(' / ') : ''}</div>
+            ${it.why ? `<div><div class="k">${T('whyPick')}</div>${esc(it.why)}</div>` : ''}
+            ${it.context_check ? `<div><div class="k">${T('ctxCheck')}</div>${esc(it.context_check)}</div>` : ''}
+            ${hook}
+          </div></details>`; }).join('')}</details>`;
+  }).join('') : `<div class="empty">${T('notYet')}</div>`;
+}
+
+// ---------- 出片墙 ----------
+let SORT = 'score';
+try { SORT = localStorage.getItem('wallSort') || 'score'; } catch (e) {}
+const SHOW_ALL = new Set();          // 哪些组点了「显示全部」
+const GROUP_CAP = 12;
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-sort]');
+  if (b){ SORT = b.dataset.sort; try { localStorage.setItem('wallSort', SORT); } catch (err) {} }
+  const m = e.target.closest('[data-more]');
+  if (m){ const g = m.dataset.more; SHOW_ALL.has(g) ? SHOW_ALL.delete(g) : SHOW_ALL.add(g); }
+  if ((b || m) && LAST) safe(renderWall, (LAST.sessions || [])[0], LAST);
+});
+function platState(c, d){
+  // 每个平台：已发 / 队列里（排队、发布中、失败）
+  const out = {};
+  for (const p of ['douyin', 'bili']) if (c.published[p]) out[p] = {state: 'done'};
+  for (const q of (d.queue || []).slice().reverse()) {      // 老的先、新的覆盖
+    if (q.key !== c.key || q.status === 'cancelled') continue;
+    for (const p of q.platforms) {
+      const r = (q.results || {})[p];
+      if (out[p] && out[p].state === 'done') continue;
+      out[p] = r ? {state: r.state, note: r.note} : {state: q.status === 'pending' ? 'pending' : q.status};
+    }
+  }
+  return out;
+}
+// 出片卡片（本场出片、手动上传共用）
+function clipCard({c, ps}){
+  const label = T('st');
+  const lv = c.check && (c.check.level || (c.check.ok ? '✓' : '✗'));
+  const qa = c.check ? `<span class="chip ${lv === '✓' ? 'good' : lv === '⚠' ? 'warn' : 'bad'}">${T('qa', lv)}</span>` : '';
+  const qaWhy = c.check && (c.check.bad || []).length ? `<div class="qawhy ${lv === '✗' ? 'bad' : 'warn'}" title="${esc(c.check.bad.join('; '))}">${esc(c.check.bad.join('; '))}</div>` : '';
+  const plat = Object.entries(ps).map(([p, s]) => {
+    const cls = s.state === 'done' ? (p === 'bili' ? 'bili' : 'dy') : s.state === 'failed' ? 'bad' : 'run';
+    return `<span class="chip ${cls}" title="${esc(s.note || '')}">${PLAT(p)} ${s.state === 'running' ? '<span class="spin"></span>' : label[s.state] || ''}</span>`;
+  }).join('');
+  const lifted = Object.values(ps).some(s => ['pending', 'running'].includes(s.state));
+  const left = ['douyin', 'bili'].filter(p => PUB_ON[p] && (!ps[p] || ps[p].state === 'failed'));
+  const pubOff = !PUB_ON.douyin && !PUB_ON.bili;
+  const waiting = Object.values(ps).some(s => s.state === 'waiting');
+  const btn = c.key ? (lifted ? `<button class="btn ghost" disabled>${T('publishingBtn')}</button>`
+    : waiting ? `<button class="btn ghost" disabled>${label.waiting}</button>`
+    : left.length ? `<button class="btn" data-pub="${esc(c.key)}">${left.length < 2 ? T('publishTo', PLAT(left[0])) : T('publishBtn')}</button>`
+    : `<button class="btn ghost" disabled title="${pubOff ? 'publish.enabled: false' : ''}">${pubOff ? T('pubOff') : T('bothDone')}</button>`) : '';
+  const lay = {duet_v: T('duet'), full_v: T('solo')}[c.layout] || {'连麦': T('duet'), '单人': T('solo')}[c.layout] || c.layout || '';
+  const meta = [`${c.dur_v != null ? Math.round(c.dur_v) : c.dur ?? '?'}s`, c.round != null ? T('roundShort', c.round) : '', lay, c.mtime].filter(Boolean).join(' · ');
+  return `<div class="clip ${lifted ? 'lifted' : ''}">${lifted ? `<span class="ribbon">${T('ribbon')}</span>` : ''}<span class="num">${pad(c.n)}</span>
+    <div class="cov" ${vidAttrs(c)}>${c.cover ? `<img loading="lazy" src="${esc(c.cover)}" alt="">` : ''}${c.video ? '<span class="play"><b></b></span>' : ''}</div>
+    <div class="body"><div class="ttl" title="${esc(c.title)}">${esc(c.title)}</div>
+    <div class="m">${esc(meta)}</div>
+    <div class="chips">${c.score != null ? `<span class="chip ${scoreCls(c.score)}" title="${T('scoreTip')}">${T('score', c.score)}</span>` : ''}${c.risky ? `<span class="chip warn">${T('controversial')}</span>` : ''}${qa}${tightChip(c)}${(c.chips || []).map(x => `<span class="chip">${esc(x)}</span>`).join('')}${plat}</div>
+    ${qaWhy}${btn}</div></div>`;
+}
+// 播放用的属性：原版 + 精剪（有才给）和两版时长，点开播放器能切换
+const vidAttrs = c => `data-v="${esc(c.video || '')}"${c.video_tight ? ` data-vt="${esc(c.video_tight)}" data-d="${c.dur_v ?? c.dur ?? ''}" data-dt="${c.dur_tight ?? ''}"` : ''}`;
+const pctDiff = (a, b) => a && b ? `${b <= a ? '-' : '+'}${Math.round(Math.abs(1 - b / a) * 100)}%` : '';
+const tightChip = c => c.video_tight && c.dur_tight ? `<span class="chip" title="${esc(T('verDiff', Math.round(c.dur_v ?? c.dur), Math.round(c.dur_tight), pctDiff(c.dur_v ?? c.dur, c.dur_tight)))}">${T('tightChip', Math.round(c.dur_tight))}</span>` : '';
+function renderWall(ses, d){
+  const clips = ses ? ses.clips : [];
+  $('clipmeta').textContent = ses && ses.dir_hint ? ses.dir_hint : '';
+  const rows = clips.map(c => ({c, ps: platState(c, d)}));
+  const busy = r => Object.values(r.ps).some(s => ['pending', 'running'].includes(s.state));
+  rows.sort((a, b) => (busy(b) - busy(a)) || (b.c.n - a.c.n));      // 正在发布的拎到最前
+  const card = clipCard;
+  // 分三组：正在发布 / 待发布 / 已发布（至少一个平台发了、且没有在发的）；待发布可按分数或时间排
+  const byScore = (a, b) => ((b.c.score ?? -1) - (a.c.score ?? -1)) || (b.c.n - a.c.n);
+  const todo = rows.filter(r => !busy(r) && !Object.values(r.ps).some(s => s.state === 'done'));
+  if (SORT === 'score') todo.sort(byScore);
+  const groups = [
+    ['publishing', rows.filter(busy)],
+    ['todo', todo],
+    ['done', rows.filter(r => !busy(r) && Object.values(r.ps).some(s => s.state === 'done'))],
+  ].filter(([, rs]) => rs.length);
+  $('wall').innerHTML = rows.length ? groups.map(([g, rs]) => {
+    const capped = rs.length > GROUP_CAP + 2 && !SHOW_ALL.has(g);
+    return `<div class="group">
+      <div class="ghead">${g === 'publishing' ? '<span class="spin" style="color:var(--accent)"></span>' : ''}${T(g)}<span class="n">${rs.length}</span><span class="bar2"></span>
+        ${g === 'todo' ? `<span class="seg2"><button data-sort="score" class="${SORT === 'score' ? 'on' : ''}">${T('byScore')}</button><button data-sort="time" class="${SORT === 'time' ? 'on' : ''}">${T('byTime')}</button></span>` : ''}</div>
+      <div class="wall">${(capped ? rs.slice(0, GROUP_CAP) : rs).map(card).join('')}</div>
+      ${rs.length > GROUP_CAP + 2 ? `<div class="more"><button class="btn ghost" data-more="${g}">${capped ? T('showAll', rs.length) : T('showLess')}</button></div>` : ''}</div>`;
+  }).join('') : `<div class="empty">${T('noClips')}</div>`;
+}
+
+// ---------- 手动上传剪辑：拖视频 → 上传 → clip worker 跑 liveclip clip → 出片卡片照样能发布 ----------
+const UP_EXTS = ['.mp4', '.mov', '.ts', '.mkv', '.flv', '.m4v', '.webm'];
+const UP_RECENT = 3;                 // 结束了的任务只展开最新 3 个，更早的收起
+let SKEW = 0;                        // 本机时钟 - 服务端时钟（算「已用时」）
+const fmtSize = b => b >= 1e9 ? (b / 1e9).toFixed(b >= 1e10 ? 0 : 1) + ' GB' : b >= 1e6 ? Math.round(b / 1e6) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
+const fmtSec = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`; };
+const extOf = n => { const m = /\.[^./\\]+$/.exec(n || ''); return m ? m[0].toLowerCase() : ''; };
+function jobSteps(j){
+  return [...(['.ts', '.mkv', '.flv', '.webm'].includes(extOf(j.name)) ? ['remux'] : []), 'asr', 'review', 'pick', 'cut', 'cover', 'qa',
+          ...(j.opts && j.opts.tight === false ? [] : ['tight'])];
+}
+function jobHTML(j, d, qpos){
+  const st = j.status, JS = T('js'), JST = T('jstep');
+  const steps = jobSteps(j), idx = steps.indexOf(j.step);
+  const stepsHTML = ['running', 'failed', 'cancelled'].includes(st) && idx >= 0 ? `<div class="jsteps">${steps.map((k, i) => {
+    const cls = i < idx ? 'done' : i > idx ? '' : st === 'running' ? 'active' : st === 'failed' ? 'bad' : '';
+    return `<span class="${cls}">${cls === 'active' ? '<span class="spin"></span>' : cls === 'done' ? '✓' : ''}${JST[k]}</span>`; }).join('')}</div>` : '';
+  const chip = st === 'running' ? `<span class="chip run"><span class="spin"></span>${JS.running}${idx >= 0 ? ' · ' + JST[j.step] : ''}</span>`
+    : st === 'done' ? `<span class="chip good">✓ ${JS.done}</span>` : st === 'failed' ? `<span class="chip bad">✗ ${JS.failed}</span>`
+    : `<span class="chip">${JS[st] || st}</span>`;
+  const o = j.opts || {}, top = j.top_used || o.top || j.top_auto;
+  const meta = [fmtSize(j.size || 0), j.dur ? fmtDur(j.dur / 60) : '', j.vertical ? T('jVert') : T('jHoriz'), T('jTop', top, !o.top),
+                o.tight === false ? '' : T('jTight'), o.burn === false ? T('jNoBurn') : T('jBurn'), j.retried ? T('jRetried', j.retried) : ''].filter(Boolean).join(' · ');
+  const right = st === 'running' && j.started_ts ? `<span data-since="${j.started_ts}">${T('jElapsed', fmtSec(Date.now() / 1000 - SKEW - j.started_ts))}</span>`
+    : st === 'pending' ? esc(T('jQueuePos', qpos))
+    : j.finished_ts && j.started_ts ? T('jTook', fmtSec(j.finished_ts - j.started_ts)) : esc(T('jAt', (j.created || '').slice(0, 11)));
+  const err = j.error && st !== 'done' ? `<div class="jerr ${st === 'cancelled' ? 'soft' : ''}">${esc(j.error)}</div>` : '';
+  const cost = j.cost && !COST_HIDDEN ? `<span class="muted">${T('jCost', j.cost.usd.toFixed(2), j.cost.cny.toFixed(2))}</span>` : '';
+  const act = st === 'pending' ? `<button class="btn ghost" data-jact="cancel" data-id="${esc(j.id)}">${T('jCancel')}</button>`
+    : st === 'running' ? `<button class="btn ghost" data-jact="cancel" data-id="${esc(j.id)}" ${j.cancel_req ? 'disabled' : ''}>${T(j.cancel_req ? 'jStopping' : 'jStop')}</button>`
+    : `${st !== 'done' ? `<button class="btn" data-jact="retry" data-id="${esc(j.id)}">${T('jRetry')}</button>` : ''}<button class="btn ghost" data-jact="delete" data-id="${esc(j.id)}" data-dir="${esc(j.dir_hint || '')}">${T('jDelete')}</button>`;
+  const clips = (j.clips || []).slice().sort((a, b) => a.n - b.n);
+  const wall = st === 'done' ? (clips.length ? `<div class="jclips"><div class="ghead" title="${esc(j.dir_hint || '')}">${T('jClips', clips.length)}<span class="bar2"></span></div>
+      <div class="wall">${clips.map(c => clipCard({c, ps: platState(c, d)})).join('')}</div></div>` : `<div class="jerr soft">${T('jNoClips')}</div>`) : '';
+  return `<div class="job ${st === 'running' ? 'run' : ''}" data-job="${esc(j.id)}">
+    <div class="jh">${chip}<div class="jt"><b title="${esc(j.title)}">${esc(j.title)}</b><div>${j.name && j.name !== j.title ? esc(j.name) + ' · ' : ''}${esc(meta)}</div></div>
+      <span class="je num">${right}</span></div>
+    ${stepsHTML}${err}<div class="jact">${act}${cost}</div>${wall}</div>`;
+}
+function renderUploads(d){
+  const u = d.uploads;
+  $('drop').classList.toggle('off', !u || !!u.error);
+  $('upexts').textContent = T('upExts', UP_EXTS.map(e => e.slice(1)).join(' '));
+  if (!u){ $('upmeta').textContent = ''; $('upjobs').innerHTML = `<div class="empty">${T('upOld')}</div>`; return; }
+  if (u.error){ $('upjobs').innerHTML = `<div class="err" style="margin:0">${esc(u.error)}</div>`; return; }
+  SKEW = Date.now() / 1000 - u.now_ts;
+  renderXfer();
+  $('upmeta').textContent = T('upMeta', u.free_gb, u.worker);
+  const jobs = u.jobs || [];
+  const active = [...jobs.filter(j => j.status === 'running'), ...jobs.filter(j => j.status === 'pending').reverse()];   // 在剪的在上，排队的按先后
+  const finished = jobs.filter(j => !['pending', 'running'].includes(j.status));
+  const pend = jobs.filter(j => j.status === 'pending').reverse();      // 队列顺序：先传的先剪
+  const qpos = j => pend.indexOf(j) + 1 + (jobs.some(x => x.status === 'running') ? 1 : 0);
+  const recent = finished.slice(0, UP_RECENT), older = finished.slice(UP_RECENT);
+  const html = j => jobHTML(j, d, qpos(j));
+  $('upjobs').innerHTML = jobs.length || XFER.length ? `<div class="jobs">${[...active, ...recent].map(html).join('')}</div>
+    ${older.length ? `<details class="older" data-rk="up-older" ${ROUND_OPEN.get('up-older') ? 'open' : ''}><summary>${T('jOlder', older.length)}</summary><div class="jobs">${older.map(html).join('')}</div></details>` : ''}`
+    : `<div class="empty">${T('upNone')}</div>`;
+}
+// 「已用时」每秒走
+setInterval(() => document.querySelectorAll('[data-since]').forEach(el => el.textContent = T('jElapsed', fmtSec(Date.now() / 1000 - SKEW - +el.dataset.since))), 1000);
+
+// 选项：出几条
+function fillTop(){
+  const sel = $('upTop'), v = sel.value;
+  sel.innerHTML = `<option value="">${T('upTopAuto')}</option>` + [3, 5, 8, 10, 15, 20].map(n => `<option value="${n}">${T('upTopN', n)}</option>`).join('');
+  sel.value = v;
+}
+// 上传队列（浏览器这边）：一个个传，XHR 能看进度；传完服务端排进剪辑队列
+const XFER = [];
+let XBUSY = false;
+function addFiles(files){
+  files = [...files];
+  if (!files.length) return;
+  const one = files.length === 1;
+  for (const f of files) {
+    const ext = extOf(f.name);
+    const x = {f, name: f.name, size: f.size, state: 'wait', loaded: 0, opts: {
+      title: one ? $('upTitle').value.trim() : '', top: $('upTop').value, tight: $('upTight').checked ? '1' : '0',
+      burn: $('upBurn').checked ? '1' : '0', note: $('upNote').value.trim()}};
+    if (!UP_EXTS.includes(ext)) Object.assign(x, {state: 'err', err: T('upBadType', ext)});
+    else if (!f.size) Object.assign(x, {state: 'err', err: T('upEmpty')});
+    XFER.push(x);
+  }
+  $('upTitle').value = '';
+  renderXfer(); pump();
+  $('upPanel').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+function renderXfer(){
+  $('upxfer').innerHTML = XFER.map((x, i) => {
+    const pct = x.size ? Math.min(100, x.loaded / x.size * 100) : 0;
+    const st = x.state === 'up' ? `<span class="chip run"><span class="spin"></span>${T('upSending')} ${pct.toFixed(0)}%</span>`
+      : x.state === 'check' ? `<span class="chip run"><span class="spin"></span>${T('upChecking')}</span>`
+      : x.state === 'done' ? `<span class="chip good">✓ ${T('upSent')}</span>` : x.state === 'err' ? `<span class="chip bad">✗</span>`
+      : `<span class="chip">${T('upWait')}</span>`;
+    const sub = x.state === 'up' && x.speed ? T('upSpeed', fmtSize(x.speed), fmtSec((x.size - x.loaded) / x.speed)) : '';
+    return `<div class="job ${x.state === 'up' ? 'run' : ''}"><div class="jh">${st}<div class="jt"><b title="${esc(x.name)}">${esc(x.name)}</b>
+        <div>${fmtSize(x.size)}${x.opts.title ? ' · ' + esc(x.opts.title) : ''}${sub ? ' · ' + esc(sub) : ''}</div></div>
+        ${['wait', 'up', 'check'].includes(x.state) ? `<button class="btn ghost" data-xabort="${i}">${T('upAbort')}</button>` : x.state === 'err' ? `<button class="btn ghost" data-xdismiss="${i}">×</button>` : ''}</div>
+      ${x.state === 'up' ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
+      ${x.state === 'err' ? `<div class="jerr">${esc(x.err)}</div>` : ''}</div>`;
+  }).join('');
+}
+async function pump(){
+  if (XBUSY) return;
+  const x = XFER.find(y => y.state === 'wait'); if (!x) return;
+  XBUSY = true;
+  try {
+    x.state = 'check'; renderXfer();
+    const r = await fetch('/api/upload/check', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: x.name, size: x.size})});
+    const j = await r.json().catch(() => ({error: `HTTP ${r.status}`}));
+    if (j.error) throw new Error(j.error);
+    if (x.state !== 'check') return;          // 检查时点了取消
+    await send(x);
+  } catch (e) { if (x.state !== 'err') Object.assign(x, {state: 'err', err: T('upFail') + e.message}); }
+  finally { XBUSY = false; renderXfer(); tick(); pump(); }
+}
+function send(x){
+  return new Promise((resolve, reject) => {
+    const q = new URLSearchParams({name: x.name, ...x.opts});
+    const xhr = new XMLHttpRequest(); x.xhr = xhr; x.state = 'up'; x.t0 = performance.now();
+    xhr.open('PUT', '/api/upload?' + q.toString());
+    let last = 0;
+    xhr.upload.onprogress = e => {
+      x.loaded = e.loaded; const dt = (performance.now() - x.t0) / 1000; x.speed = dt > 0.3 ? e.loaded / dt : 0;
+      if (performance.now() - last > 250) { last = performance.now(); renderXfer(); }
+    };
+    xhr.onload = () => {
+      let j = {}; try { j = JSON.parse(xhr.responseText); } catch (e) { j = {error: `HTTP ${xhr.status}`}; }
+      if (j.error) return reject(new Error(j.error));
+      x.state = 'done'; x.id = j.id; toast(T('upSent'));
+      setTimeout(() => { const k = XFER.indexOf(x); if (k >= 0) { XFER.splice(k, 1); renderXfer(); } }, 4000);
+      resolve();
+    };
+    xhr.onerror = () => reject(new Error(T('upFail').replace(/[:：]\s*$/, '')));
+    xhr.onabort = () => { Object.assign(x, {state: 'err', err: T('upAborted')}); resolve(); };
+    xhr.send(x.f);
+  });
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-xabort]');
+  if (a){ const x = XFER[+a.dataset.xabort]; if (!x) return;
+    if (x.xhr && x.state === 'up') x.xhr.abort(); else Object.assign(x, {state: 'err', err: T('upAborted')});
+    renderXfer(); return; }
+  const dm = e.target.closest('[data-xdismiss]');
+  if (dm){ XFER.splice(+dm.dataset.xdismiss, 1); renderXfer(); if (LAST) safe(renderUploads, LAST); }
+});
+$('upfile').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+$('drop').addEventListener('click', e => { if ($('drop').classList.contains('off')) e.preventDefault(); });
+// 拖到页面任何地方都行
+let DRAG = 0;
+const hasFiles = e => [...(e.dataTransfer && e.dataTransfer.types || [])].includes('Files');
+addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); DRAG++; $('dropcover').classList.add('on'); $('drop').classList.add('over'); });
+addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--DRAG <= 0) { DRAG = 0; $('dropcover').classList.remove('on'); $('drop').classList.remove('over'); } });
+addEventListener('drop', e => {
+  if (!hasFiles(e)) return; e.preventDefault(); DRAG = 0; $('dropcover').classList.remove('on'); $('drop').classList.remove('over');
+  if ($('drop').classList.contains('off')) { toast(T('upOld')); return; }
+  setTab('upload');
+  addFiles(e.dataTransfer.files);
+});
+// 任务按钮：重试 / 停止（取消排队）/ 删除（先确认）
+async function jobAct(act, id){
+  try {
+    const r = await fetch('/api/clipjob/' + act, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id})});
+    const j = await r.json();
+    toast(j.error || T({retry: 'jRequeued', delete: 'jDeleted'}[act] || (j.status === 'running' ? 'jStopReq' : 'jCancelled')));
+  } catch (err) { toast(err.message); }
+  tick();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-jact]'); if (!b) return;
+  const act = b.dataset.jact, id = b.dataset.id;
+  if (act !== 'delete') { b.disabled = true; jobAct(act, id); return; }
+  $('dlg').innerHTML = `<h3>${T('jDelTitle')}</h3><div>${esc(T('jDelBody', b.dataset.dir || ''))}</div>
+    <div class="actions"><button class="btn ghost" data-close>${T('cancel')}</button><button class="btn danger" id="jdel">${T('jDelete')}</button></div>`;
+  $('pmodal').classList.add('open');
+  $('jdel').onclick = () => { $('pmodal').classList.remove('open'); jobAct('delete', id); };
+});
+
+// ---------- 花费 ----------
+function renderCosts(d){
+  const c = d.costs;
+  $('costPanel').style.display = c ? '' : 'none';
+  if (!c) return;
+  applyEye();
+  if (c.error){ $('cost').innerHTML = `<div class="empty">${esc(c.error)}</div>`; return; }
+  const usd = v => '$' + (v || 0).toFixed(2), cny = v => '¥' + (v || 0).toFixed(2);
+  const tile = (w, l) => `<div class="ctile"><div class="n">${usd(w.usd)}<small>${cny(w.cny)}</small></div><div class="l">${l}</div></div>`;
+  const tools = c.session.tools.length ? c.session.tools : c.today.tools;
+  const max = Math.max(...tools.map(x => x.usd + x.cny / 7), 0.001);
+  $('cost').innerHTML = `
+    <div class="ctiles">${tile(c.session, T('costSession') + (c.per_clip != null && !COST_HIDDEN ? T('perClip', usd(c.per_clip)) : ''))}${tile(c.today, T('today'))}${tile(c.week, T('week'))}</div>
+    <div class="ck">${T('byStep', c.session.tools.length ? T('costSession') : T('today'))}</div>
+    ${tools.map(x => `<div class="crow"><span>${esc(x.tool)}</span>
+      <div class="track2"><div class="fill ${x.kind === 'bailian' ? 'cny' : ''}" style="width:${(x.usd + x.cny / 7) / max * 100}%"></div></div>
+      <span class="amt">${x.kind === 'bailian' ? cny(x.cny) : usd(x.usd)} · ${T('times', x.n)}</span></div>`).join('') || `<div class="empty">${T('none')}</div>`}
+    <div class="cnote">${esc(c.note || '')} ${T('total')}<b>${usd(c.all.usd)} · ${cny(c.all.cny)}</b></div>`;
+  $('costmeta').textContent = c.meta || '';
+}
+
+// ---------- 发布队列 ----------
+function renderQueue(d){
+  const q = d.queue || [];
+  // 只剩「到点再试」的（B站限流退避）不算进行中，单独写等待重试和时间
+  const now = Date.now() / 1000;
+  const act = q.filter(x => x.status === 'running' || (x.status === 'pending' && !(x.not_before > now)));
+  const wait = q.filter(x => x.status === 'pending' && x.not_before > now);
+  $('qmeta').textContent = act.length ? T('inProgress', act.length) : wait.length ? T('waitingN', wait.length, wait[0].retry_at || '') : '';
+  const st = r => !r ? '' : r.state === 'done' ? '✓' : r.state === 'failed' ? '✗' : r.state === 'running' ? '<span class="spin"></span>' : r.state === 'waiting' ? T('st').waiting : '…';
+  const cls = r => !r ? '' : r.state === 'done' ? 'good' : r.state === 'failed' ? 'bad' : r.state === 'waiting' ? 'warn' : '';
+  $('queue').innerHTML = q.length ? q.map(j => {
+    const res = j.results || {};
+    const failed = Object.values(res).filter(r => r.state === 'failed').map(r => r.note).join('；');
+    const waiting = j.status === 'pending' && j.not_before > now && j.retry_at;
+    const cost = Object.values(res).reduce((a, r) => a + (r.cost || 0), 0);
+    return `<div class="qitem">
+      <div class="t">${esc(j.title)}${j.status === 'cancelled' ? T('cancelled') : ''}</div>
+      <div class="s">${j.platforms.map(p => { const r = res[p];
+        return `<span class="chip ${cls(r) || (p === 'bili' ? 'bili' : 'dy')}" title="${esc(r && r.note || '')}">${PLAT(p)} ${st(r) || (j.status === 'pending' ? T('st').pending : '')}</span>`; }).join('')}
+        <span class="chip">${j.at ? T('at', esc(j.at.slice(5))) : T('now')}</span>
+        <span class="muted num" style="font-size:12px;color:var(--muted)">${esc((j.created || '').slice(6, 11))}</span></div>
+      ${j.status === 'failed' && failed ? `<div class="note bad" title="${esc(failed)}">${esc(failed)}</div>` : ''}
+      ${waiting ? `<div class="note wait">${T('retryAt', esc(j.retry_at))}</div>` : ''}
+      ${!COST_HIDDEN && Object.values(res).some(r => r.cost != null) ? `<div class="note wait">${T('spent', cost.toFixed(2))}</div>` : ''}
+      ${j.status === 'failed' ? `<button class="btn ghost" data-qact="retry" data-id="${esc(j.id)}">${T('retry')}</button>` : ''}
+      ${j.status === 'pending' ? `<button class="btn ghost" data-qact="cancel" data-id="${esc(j.id)}">${T('cancel')}</button>` : ''}
+    </div>`; }).join('') : `<div class="empty">${T('queueEmpty')}</div>`;
+}
+
+function renderSide(d){
+  const v = d.rec || {}, ses = (d.sessions || [])[0];
+  const ev = ses ? ses.events.slice().reverse() : [];
+  $('feed').innerHTML = ev.length ? ev.map(e => `<div class="ev ${e.kind}"><span class="tm">${esc(e.t.slice(6))}</span><span class="msg" title="${esc(e.msg)}">${esc(e.msg.replace(/ → \/\S+/, ''))}</span></div>`).join('') : '<div class="empty">—</div>';
+  $('pub').innerHTML = (d.publish || []).length ? d.publish.map(p => `<div class="row"><span class="chip ${p.platform === 'bili' ? 'bili' : 'dy'}">${PLAT(p.platform)}</span><div class="grow">${esc(p.title)}<div class="muted">${esc(p.time)}</div></div></div>`).join('') : `<div class="empty">${T('none')}</div>`;
+  $('syncmeta').textContent = v.checked ? T('updated', v.checked).split(' · ')[0] : '';
+  $('ups').innerHTML = (v.uploads || []).length ? v.uploads.slice().reverse().map(u => `<div class="row"><span class="muted num" style="width:44px;flex:none">${esc(u.t.slice(6, 11))}</span><div class="grow">${esc(u.msg.split('/').pop())}</div></div>`).join('') : `<div class="empty">${esc(v.error || '—')}</div>`;
+  $('probsPanel').style.display = (d.problems || []).length ? '' : 'none';
+  $('probs').innerHTML = (d.problems || []).map(p => `<div class="row"><span class="chip warn">⚠</span><div class="grow">${esc(p.what)}<div class="muted">${esc(p.fix)}</div></div></div>`).join('');
+}
+
+// 每块单独兜住：一块出错不影响别的块
+function safe(fn, ...a){ try { fn(...a); } catch (e) { console.error(fn.name, e); } }
+function render(d){
+  LAST = d;
+  if (d.tz) { TZ = d.tz.audience || TZ; TZL = d.tz.label || TZL; }
+  if (d.publish_enabled) PUB_ON = d.publish_enabled;
+  $('err').innerHTML = '';
+  $('conn').className = 'dot on';
+  $('updated').textContent = T('updated', d.now);
+  const ses = (d.sessions || [])[0];
+  safe(renderHealth, d); safe(renderPipeline, d); safe(renderSession, ses, d); safe(renderDecisions, ses);
+  ALLCLIPS.clear();
+  for (const c of [...(ses ? ses.clips : []), ...((d.uploads || {}).jobs || []).flatMap(j => j.clips || [])]) ALLCLIPS.set(c.key, c);
+  if (document.activeElement !== $('evNote')) $('evNote').value = d.live_note || '';
+  safe(renderWall, ses, d); safe(renderUploads, d); safe(renderQueue, d); safe(renderCosts, d); safe(renderSide, d);
+  const nUp = ((d.uploads || {}).jobs || []).filter(j => ['running', 'pending'].includes(j.status)).length;   // 标签角标：在剪 + 排队
+  $('tbUp').textContent = nUp || '';
+  $('tbLive').textContent = ((d.rec || {}).live || []).length ? T('tbLiveOn') : '';
+  $('tbLive').classList.add('live');
+  hideTipIfGone();
+}
+
+// ---------- 浮动提示（时间轴上的片段 / 分段） ----------
+let TIP_EL = null;
+document.addEventListener('mouseover', e => {
+  const t = e.target.closest('[data-tip]');
+  TIP_EL = t;
+  if (!t) { $('tip').style.display = 'none'; return; }
+  $('tip').textContent = t.dataset.tip; $('tip').style.display = 'block'; moveTip(e);
+});
+document.addEventListener('mousemove', e => { if (TIP_EL) moveTip(e); });
+function moveTip(e){
+  const tp = $('tip'), w = tp.offsetWidth, h = tp.offsetHeight;
+  let x = e.clientX + 12, y = e.clientY - h - 12;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 12;
+  if (y < 8) y = e.clientY + 16;
+  tp.style.left = Math.max(8, x) + 'px'; tp.style.top = y + 'px';
+}
+function hideTipIfGone(){ if (TIP_EL && !document.contains(TIP_EL)) { TIP_EL = null; $('tip').style.display = 'none'; } }
+
+let RZ = 0;
+addEventListener('resize', () => { clearTimeout(RZ); RZ = setTimeout(() => { if (LAST) safe(drawTimeline, (LAST.sessions || [])[0] || null, LAST); }, 120); });
+addEventListener('scroll', () => $('hdr').classList.toggle('scrolled', scrollY > 4), {passive: true});
+
+// ---------- 发布弹窗 ----------
+function bjDefault(){
+  // 默认填今晚（观众时区）20:00（已过就明天）
+  const now = new Date(), bj = new Date(now.toLocaleString('en-US', {timeZone: TZ}));
+  if (bj.getHours() >= 20) bj.setDate(bj.getDate() + 1);
+  return `${bj.getFullYear()}-${pad(bj.getMonth() + 1)}-${pad(bj.getDate())}T20:00`;
+}
+async function openPublish(key){
+  const c = ALLCLIPS.get(key);
+  $('dlg').innerHTML = `<div class="empty">${T('reading')}</div>`; $('pmodal').classList.add('open');
+  let p;
+  try { const r = await fetch('/api/preview?key=' + encodeURIComponent(key)); p = await r.json(); }
+  catch (e) { p = {error: e.message}; }
+  if (p.error){ $('dlg').innerHTML = `<div class="err" style="margin:0">${esc(p.error)}</div><div class="actions"><button class="btn ghost" data-close>${T('cancel')}</button></div>`; return; }
+  const done = new Set(p.published || []);
+  const plat = (k, title, tags) => `<div class="plat"><label><input type="checkbox" name="pf" value="${k}" ${done.has(k) ? 'disabled' : 'checked'}> ${PLAT(k)}${done.has(k) ? T('publishedBefore') : ''}</label>
+      <div>${esc(title)}</div><div class="tags">${tags.map(t => (k === 'douyin' ? '#' : '') + esc(t)).join(k === 'douyin' ? ' ' : '，')}</div></div>`;
+  $('dlg').innerHTML = `
+    <h3>${T('confirmTitle')}</h3>
+    <div class="top">${c && c.cover ? `<img src="${esc(c.cover)}" alt="">` : ''}<div style="min-width:0"><b>${esc(c ? c.title : '')}</b><div style="color:var(--muted);font-size:12px;margin-top:4px">${c ? `${c.dur_v != null ? Math.round(c.dur_v) : c.dur}s${c.dur_tight ? ' · ' + T('tightChip', Math.round(c.dur_tight)) : ''} · ${T('score', c.score)}` : ''}</div></div></div>
+    ${(p.notes || []).map(n => `<div class="warnbox">${esc(n.slice(0, 160))}</div>`).join('')}
+    ${plat('douyin', p.douyin.title, p.douyin.tags)}
+    ${plat('bili', p.bili.title, p.bili.tags)}
+    <div class="when">
+      <label><input type="radio" name="when" value="now" checked> ${T('pubNow')}</label>
+      <label><input type="radio" name="when" value="at"> ${T('pubAt')}</label>
+      <input type="datetime-local" id="at" value="${bjDefault()}">
+    </div>
+    <div class="actions"><span class="msg" id="pmsg"></span>
+      <button class="btn ghost" data-close>${T('cancel')}</button>
+      <button class="btn" id="go">${T('confirm')}</button></div>`;
+  $('go').onclick = async () => {
+    const platforms = [...document.querySelectorAll('input[name=pf]:checked')].map(x => x.value);
+    const at = document.querySelector('input[name=when]:checked').value === 'at' ? $('at').value.replace('T', ' ') : null;
+    $('go').disabled = true;
+    try {
+      const res = await fetch('/api/publish', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key, platforms, at})});
+      const j = await res.json();
+      if (j.error){ $('pmsg').textContent = j.error; $('go').disabled = false; return; }
+    } catch (e) { $('pmsg').textContent = e.message; $('go').disabled = false; return; }
+    $('pmodal').classList.remove('open'); toast(T('queued')); tick();
+  };
+}
+function toast(t){ const e = $('toast'); e.textContent = t; e.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.display = 'none', 2500); }
+// 播放器：有精剪版时上面出「原版 / 精剪」切换，默认放精剪；切换时按进度比例接着放
+let PLAY = null;
+function openPlayer(el){
+  PLAY = {v: el.dataset.v, vt: el.dataset.vt || null, d: +el.dataset.d || null, dt: +el.dataset.dt || null};
+  PLAY.which = PLAY.vt ? 'tight' : 'plain';
+  $('vmodal').classList.add('open'); playSrc(0);
+}
+function playSrc(ratio){
+  const p = $('player');
+  p.src = PLAY.which === 'tight' ? PLAY.vt : PLAY.v;
+  if (ratio > 0) p.addEventListener('loadedmetadata', () => { p.currentTime = ratio * p.duration; }, {once: true});
+  p.play().catch(() => {});
+  $('vswitch').innerHTML = PLAY.vt ? `<span class="seg2"><button data-ver="plain" class="${PLAY.which === 'plain' ? 'on' : ''}">${T('verPlain')}</button><button data-ver="tight" class="${PLAY.which === 'tight' ? 'on' : ''}">${T('verTight')}</button></span>
+    ${PLAY.d && PLAY.dt ? `<span>${esc(T('verDiff', Math.round(PLAY.d), Math.round(PLAY.dt), pctDiff(PLAY.d, PLAY.dt)))}</span>` : ''}` : '';
+}
+function closeVideo(){ $('player').pause(); $('vmodal').classList.remove('open'); PLAY = null; }
+
+document.addEventListener('click', async e => {
+  const qa = e.target.closest('[data-qact]');
+  if (qa){
+    qa.disabled = true;
+    try {
+      const r = await fetch('/api/' + qa.dataset.qact, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: qa.dataset.id})});
+      const j = await r.json(); toast(j.error || (qa.dataset.qact === 'retry' ? T('requeued') : T('cancelledToast')));
+    } catch (err) { toast(err.message); }
+    tick(); return;
+  }
+  const b = e.target.closest('[data-pub]');
+  if (b){ openPublish(b.dataset.pub); return; }
+  if (e.target.closest('[data-close]') || e.target.id === 'pmodal'){ $('pmodal').classList.remove('open'); return; }
+  if (e.target.closest('[data-xv]') || e.target.id === 'vmodal'){ closeVideo(); return; }
+  const sw = e.target.closest('[data-ver]');
+  if (sw && PLAY){ const p = $('player'), r = p.duration ? p.currentTime / p.duration : 0;
+    PLAY.which = sw.dataset.ver; playSrc(r); return; }
+  const v = e.target.closest('[data-v]');
+  if (v && v.dataset.v){ $('tip').style.display = 'none'; openPlayer(v); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($('vmodal').classList.contains('open')) closeVideo();
+  $('pmodal').classList.remove('open');
+});
+
+// ---------- 假数据（开发用）：?mock=live|picking|cutting|wrapping|short|empty|offline|upload|upload-idle，基于真实数据改 ----------
+const MOCK = QP.get('mock');
+function mock(d){
+  if (!MOCK) return d;
+  d = JSON.parse(JSON.stringify(d));
+  if (MOCK === 'offline') throw new Error('mock offline');
+  if (MOCK === 'empty'){
+    Object.assign(d, {sessions: [], queue: [], publish: [], problems: [], step_name: null});
+    d.editor = {running: false}; d.rec = {ok: false, error: 'ssh: connect to host recorder port 22: Operation timed out', checked: d.now.slice(6, 14)};
+    d.pipeline = d.pipeline.map(p => ({...p, state: '', t: ''})); delete d.costs; return d;
+  }
+  if (MOCK.startsWith('upload')) {     // 手动上传：排队 / 剪辑中 / 失败各一个 + 一个正在上传的（真实任务排在后面）
+    const now = (d.uploads || {}).now_ts || Date.now() / 1000;
+    d.uploads = Object.assign({free_gb: 102, min_free_gb: 20, now_ts: now, jobs: []}, d.uploads || {}, {worker: MOCK === 'upload'});
+    if (MOCK === 'upload-idle') { d.uploads.jobs = []; return d; }
+    const base = {opts: {top: null, tight: true, burn: true, note: ''}, vertical: true, top_auto: 8, w: 720, h: 1280, clips: []};
+    d.uploads.jobs = [
+      {...base, id: 'UP_mock_3', name: '10月15号直播.ts', title: '10月15号直播', size: 3.4e9, dur: 4680, status: 'pending', created: '10-15 22:41:07', top_auto: 8},
+      {...base, id: 'UP_mock_2', name: '连麦回放.mp4', title: '连麦回放', size: 1.9e9, dur: 2950, status: 'running', step: 'pick', started_ts: now - 262, top_used: 5, top_auto: 5, cost: {usd: 0.41, cny: 0.018}},
+      {...base, id: 'UP_mock_1', name: '横屏访谈.mov', title: '横屏访谈', vertical: false, w: 1920, h: 1080, size: 0.8e9, dur: 1500, status: 'failed', step: 'review',
+       started_ts: now - 900, finished_ts: now - 700, retried: 1, top_auto: 3,
+       error: '[    98s] $ python -m liveclip.review.subs data/asr/UP_mock_1_bailian.json --out …\nTimeoutError: claude -p 超时\n失败：liveclip.review.subs'},
+      ...d.uploads.jobs];
+    if (!XFER.some(x => x.mock)) XFER.push({mock: true, name: '10月16号主号直播.ts', size: 5.2e9, loaded: 2.24e9, speed: 412e6, state: 'up', opts: {title: ''}});
+    return d;
+  }
+  const s = (d.sessions || [])[0]; if (!s) return d;
+  const P = {live: [172, 8, 'recognize', 'waiting'], picking: [181, 8, 'pick', 'picking'], cutting: [183, 9, 'cut', 'cutting'],
+             short: [21.4, 1, null, 'waiting'], wrapping: [null, 20, 'cut', 'cutting']}[MOCK];
+  if (!P) return d;
+  const [T0, rounds, step, kind] = P;
+  const pickedTo = MOCK === 'wrapping' ? 420 : rounds * 20;
+  let cutting = [];
+  if (T0 != null) {
+    let acc = 0; s.segments = s.segments.filter(x => (acc += x.dur / 60) <= T0 + 0.01);
+    s.total_min = +(s.segments.reduce((a, x) => a + x.dur, 0) / 60).toFixed(1);
+    s.ended = false; s.done = false; s.full = {ready: false};
+    d.rec.live = [{name: s.anchor, elapsed: hms(s.total_min)}];
+  } else { s.ended = true; s.done = false; s.full = {ready: false}; }
+  s.clips = s.clips.filter(c => (c.round || 0) <= rounds);
+  if (kind === 'cutting') { cutting = s.clips.filter(c => c.round === rounds).map(c => ({n: c.n, title: c.title})); s.clips = s.clips.filter(c => c.round !== rounds); }
+  s.rounds = rounds; s.picked_until_min = Math.min(pickedTo, s.total_min); s.next_round_min = pickedTo + 20;
+  s.decisions.rounds = s.decisions.rounds.filter(r => r.r <= rounds);
+  s.decisions.cutting = cutting;
+  s.decisions.now = kind === 'picking' ? {kind, round: rounds + 1} : kind === 'cutting' ? {kind, round: rounds} : {kind: 'waiting', next_min: s.next_round_min};
+  if (MOCK === 'short') s.deferred = ['示例标题 / 第二行'];
+  d.editor.current = step ? {step, elapsed: '00:41', cmd: ''} : null;
+  const idx = d.pipeline.findIndex(p => p.key === step);
+  d.pipeline = d.pipeline.map((p, i) => ({...p, state: (p.key === 'record' && T0 != null) || p.key === step ? 'active' : step && i < idx ? 'done' : !step && i < 4 ? 'done' : '',
+    t: p.key === 'record' && T0 != null ? hms(s.total_min) : p.key === step ? '00:41' : ''}));
+  d.step_name = step ? (d.pipeline[idx] || {}).name : null;
+  return d;
+}
+
+async function tick(){
+  try {
+    const r = await fetch('/api/status?lang=' + LANG, {cache: 'no-store'});
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    render(mock(d));
+    applyShot();
+  } catch (e) {
+    $('conn').className = 'dot bad';
+    $('err').innerHTML = `<div class="err">${T('cantConnect')}${esc(e.message)}${LAST ? T('stale') : ''}</div>`;
+  }
+}
+function clock(){
+  const loc = LANG === 'en' ? 'en-US' : 'zh-CN';
+  const bj = new Intl.DateTimeFormat(loc, {timeZone: TZ, month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false}).format(new Date());
+  const lo = new Intl.DateTimeFormat(loc, {hour: '2-digit', minute: '2-digit', hour12: false}).format(new Date());
+  $('bj').innerHTML = `${T('bj')} ${bj}<small>${T('local')} ${lo}</small>`;
+}
+// ---------- 截图模式：?only=top|decisions|wall|queue|cost|events|publish|upload ----------
+const SHOT = {top: ['health', 'pipePanel', 'session'], decisions: ['decPanel'], wall: ['wallPanel'],
+              queue: ['queuePanel', 'pubPanel'], cost: ['costPanel'], events: ['eventsPanel'], publish: ['wallPanel'], upload: ['upPanel']};
+let shotDone = false;
+function applyShot(){
+  const only = QP.get('only');
+  if (!only || !SHOT[only] || shotDone || !LAST) return;
+  shotDone = true;
+  document.body.classList.add('shot');
+  SHOT[only].forEach(id => $(id) && $(id).classList.add('keep'));
+  if (LAST) safe(drawTimeline, (LAST.sessions || [])[0] || null, LAST);   // 布局变宽了，重排时间轴
+  if (only === 'decisions') {          // 展开最新一轮第一条选中的，看得到理由和预告候选
+    const d = document.querySelector('details.round[open] details.dec'); if (d) { d.open = true; OPEN.add(d.dataset.k); }
+  }
+  if (only === 'publish') {            // 打开发布确认弹窗（只打开，不提交）
+    const b = document.querySelector('[data-pub]'); if (b) openPublish(b.dataset.pub);
+  }
+}
+if (MOCK) $('mockflag').innerHTML = `<span class="mockflag">MOCK · ${esc(MOCK)}</span>`;
+applyStatic(); clock(); setInterval(clock, 1000);
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

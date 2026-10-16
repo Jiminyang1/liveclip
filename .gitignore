@@ -1,0 +1,42 @@
+# environments / caches
+.venv/
+.venv-*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+
+# local configuration and secrets
+/config.yaml
+/liveclip.yaml
+.env
+.env.*
+!.env.example
+*cookie*
+data/biliup/
+data/douyin_pw_profile/
+
+# workspace data and media (when the repo itself is used as the workspace)
+/data/
+/clips/
+/deliver/
+/videos/
+/recordings/
+/logs/
+/inbox/
+/assets/fonts/
+/.trash/
+*.mp4
+*.mov
+*.ts
+*.mkv
+*.flv
+*.webm
+*.m4a
+*.mp3
+*.wav
+*.ogg
