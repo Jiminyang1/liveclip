@@ -8,11 +8,15 @@
 
 > 状态：0.1.0。从一套每天给真实博主做直播切片的生产流程里整理出来。提示词和画面文字是中文；代码是 Python + ffmpeg。
 
-<!-- TODO：截图。用 tests/sample.py 生成的演示素材或你有权使用的内容截图，不要用没有授权的画面。
-     建议：面板总览、选段决策、出片墙、一条成片和它的三张封面。 -->
-| 面板 | 成片 + 封面 |
+> 截图全部来自合成演示数据（测试图案 + 预置的模型回答，见 `tests/sample.py`），不含任何真人素材。
+
+| 总览：流水线 + 本场时间轴 | 选段决策（每轮选中 / 留到下一轮 / 规则筛掉 + 理由、预告候选） |
 |---|---|
-| _截图占位_ | _截图占位_ |
+| ![dashboard-overview-zh](docs/images/dashboard-overview-zh.webp) | ![dashboard-decisions-zh](docs/images/dashboard-decisions-zh.webp) |
+| 出片墙（封面、分数、质检、精剪、发布状态） | 手动上传剪辑 |
+| ![dashboard-clips-zh](docs/images/dashboard-clips-zh.webp) | ![dashboard-upload-zh](docs/images/dashboard-upload-zh.webp) |
+| 发布队列 | 成片样张：单人整幅 / 连麦分屏 / 3:4 封面 |
+| ![dashboard-queue-zh](docs/images/dashboard-queue-zh.webp) | ![sample-clip](docs/images/sample-clip.webp) |
 
 ## 能做什么
 

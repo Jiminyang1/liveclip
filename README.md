@@ -11,11 +11,15 @@ dashboard → optional publishing
 > Status: 0.1.0, extracted from a pipeline that clipped a real creator's daily livestreams in production.
 > Prompts and on-screen text are Chinese; the code is platform-agnostic Python + ffmpeg.
 
-<!-- TODO: screenshots. Capture from the synthetic demo (tests/sample.py) or your own content — do not use footage you
-     do not have rights to. Suggested: dashboard overview, decisions panel, clip wall, a finished clip + its covers. -->
-| Dashboard | Clip + covers |
+> All screenshots use synthetic demo data (test patterns + canned model answers, see `tests/sample.py`); no real footage.
+
+| Overview: pipeline + session timeline | Picking decisions (picked / deferred / filtered, with reasons and hook candidates) |
 |---|---|
-| _screenshot placeholder_ | _screenshot placeholder_ |
+| ![dashboard-overview-en](docs/images/dashboard-overview-en.webp) | ![dashboard-decisions-en](docs/images/dashboard-decisions-en.webp) |
+| Clip wall (covers, scores, QA, tight edit, publish state) | Upload & auto-clip |
+| ![dashboard-clips-en](docs/images/dashboard-clips-en.webp) | ![dashboard-upload-en](docs/images/dashboard-upload-en.webp) |
+| Publish queue | Output: single person full frame / split-screen co-stream / 3:4 cover |
+| ![dashboard-queue-en](docs/images/dashboard-queue-en.webp) | ![sample-clip](docs/images/sample-clip.webp) |
 
 ## What it does
 
