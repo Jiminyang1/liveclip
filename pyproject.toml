@@ -40,7 +40,7 @@ all = ["liveclip[api,asr-local,vision,montage,publish]"]
 liveclip = "liveclip.cli:entry"
 
 [project.urls]
-Homepage = "https://github.com/OWNER/liveclip"
+Homepage = "https://github.com/Jiminyang1/liveclip"
 
 [tool.hatch.build.targets.wheel]
 packages = ["liveclip"]
