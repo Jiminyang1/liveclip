@@ -1,0 +1,16 @@
+[Unit]
+Description=Live recorder (DouyinLiveRecorder) for LiveClip
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/liveclip/DouyinLiveRecorder
+ExecStart=/opt/liveclip/venv/bin/python main.py
+Environment=TERM=xterm
+Restart=always
+RestartSec=20
+StandardOutput=append:/opt/liveclip/recorder.log
+StandardError=append:/opt/liveclip/recorder.log
+
+[Install]
+WantedBy=multi-user.target

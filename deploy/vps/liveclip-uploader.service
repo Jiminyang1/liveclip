@@ -1,0 +1,10 @@
+[Unit]
+Description=Upload finished live segments for LiveClip
+
+[Service]
+Type=oneshot
+Environment=LIVECLIP_REC_ROOT=/opt/liveclip
+Environment=LIVECLIP_REMOTE=myremote:liveclip-live
+ExecStart=/usr/bin/python3 /opt/liveclip/uploader.py
+StandardOutput=append:/opt/liveclip/uploader.log
+StandardError=append:/opt/liveclip/uploader.log
