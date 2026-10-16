@@ -1,0 +1,15 @@
+# Config used by the unit tests (loaded through LIVECLIP_CONFIG in conftest.py).
+streamer:
+  name: 测试主播
+  speaker_label: 主播
+  guest_label: 嘉宾
+  name_variants: [Alex, 阿力]
+  canonical_name: 阿力
+tags:
+  douyin_must: [测试主播, 测试理论]
+  soft: [测试]
+  bili_must: [测试主播, 测试理论, 健身]
+  conditional: {tag: 身材, when_any: [减脂, 健身]}
+publish:
+  enabled: false
+notify: {backend: none}
