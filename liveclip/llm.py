@@ -6,7 +6,7 @@
 - Every call is written to the cost ledger (liveclip.cost).
 - Tests / dry runs: set LIVECLIP_LLM_FIXTURES=<dir>; the answer is read from <dir>/<step>.json (pick, review_subs,
   review_captions, hook, tight, themes) instead of calling
-  any model (a list in that file is consumed one item per call). Nothing is billed.
+  any model (a list in that file is consumed one item per call, across processes). Nothing is billed.
 """
 from __future__ import annotations
 
@@ -35,7 +35,6 @@ class LLMError(RuntimeError):
 
 
 _fixture_lock = threading.Lock()
-_fixture_pos: dict[str, int] = {}
 
 
 # cost-ledger tool name → fixture file name
@@ -52,9 +51,16 @@ def _fixture(tool):
         raise LLMError(f"LIVECLIP_LLM_FIXTURES is set but {f} does not exist (no model is called in fixture mode)")
     data = json.loads(f.read_text(encoding="utf-8"))
     if isinstance(data, list):
-        with _fixture_lock:
-            k = _fixture_pos.get(tool, 0)
-            _fixture_pos[tool] = k + 1
+        # consumed in order across processes (each pipeline step is its own process): position kept in .<name>.pos
+        import fcntl
+        pos = f.with_name(f".{f.stem}.pos")
+        with _fixture_lock, open(pos, "a+") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            fh.seek(0)
+            k = int(fh.read().strip() or 0)
+            fh.seek(0)
+            fh.truncate()
+            fh.write(str(k + 1))
         return data[min(k, len(data) - 1)]
     return data
 

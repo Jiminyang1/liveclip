@@ -290,7 +290,9 @@ def full_of(vid):
     if srt.exists():
         out["srt"] = file_url(C.rel(srt))
     mark = d / ".drive.json"   # liveclip.archive 写的
-    if mark.exists():
+    if not C.get("live.archive_remote") and not mark.exists():
+        out["cloud"] = "off"       # 没配置归档：不显示云盘状态
+    elif mark.exists():
         m = json.loads(mark.read_text(encoding="utf-8"))
         out["cloud"] = "ok" if m.get("ok") else "fail"
     return out

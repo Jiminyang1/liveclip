@@ -485,7 +485,7 @@ const L = {
     pipeline: '流水线', decisions: '选段决策', clipsTitle: '本场出片', cost: '花费', queue: '发布队列', events: '事件',
     newestFirst: '最新在上', published: '发布记录', sync: '云端同步', attention: '待注意',
     bj: () => TZL, local: '本地', douyin: '抖音', bili: 'B站',
-    recServer: '录制服务器', cantReach: '连不上', recording: (e) => `录制中 ${e}`, standby: '待机（没人开播）',
+    recServer: '录制服务器', notConfigured: '未配置', cantReach: '连不上', recording: (e) => `录制中 ${e}`, standby: '待机（没人开播）',
     watching: (n) => `盯 ${n} 个直播间`, cloudSync: '云端同步', latest: (t) => `最近 ${t}`, none: '还没有',
     editor: '剪辑机', running: '剪辑中', standbyEd: '待命', notRunning: '没在运行', uptime: (u) => `已运行 ${u}`, paused: '剪辑暂停，开机后自动补上',
     doing: '正在做', idleWait: '空闲，等新内容', elapsed: (e) => `已 ${e}`, lastStep: (t) => `上一步 ${t}`,
@@ -542,8 +542,8 @@ const L = {
     title: 'Clip Pipeline Status', updated: (t) => `Updated ${t} · refreshes every 5s`, connecting: 'Connecting…', cantConnect: 'Cannot reach dashboard server: ', stale: ' (showing last data received)',
     pipeline: 'Pipeline', decisions: 'Clip Selection', clipsTitle: 'Clips This Stream', cost: 'Cost', queue: 'Publish Queue', events: 'Events',
     newestFirst: 'newest first', published: 'Published', sync: 'Cloud Sync', attention: 'Needs Attention',
-    bj: () => TZL, local: 'Local', douyin: 'Douyin', bili: 'Bilibili',
-    recServer: 'Recorder', cantReach: 'Unreachable', recording: (e) => `Recording ${e}`, standby: 'Standby (no one live)',
+    bj: () => TZ.split('/').pop().replace(/_/g, ' '), local: 'Local', douyin: 'Douyin', bili: 'Bilibili',
+    recServer: 'Recorder', notConfigured: 'Not configured', cantReach: 'Unreachable', recording: (e) => `Recording ${e}`, standby: 'Standby (no one live)',
     watching: (n) => `Watching ${n} rooms`, cloudSync: 'Cloud sync', latest: (t) => `Last ${t}`, none: 'None yet',
     editor: 'Editor', running: 'Working', standbyEd: 'Standby', notRunning: 'Not running', uptime: (u) => `Up ${u}`, paused: 'Editing paused; resumes when online',
     doing: 'Now doing', idleWait: 'Idle, waiting for content', elapsed: (e) => `${e} elapsed`, lastStep: (t) => `Last step ${t}`,
@@ -678,12 +678,14 @@ function hcard(k, v, s, state){
 function renderHealth(d){
   const v = d.rec || {}, m = d.editor || {};
   const live = (v.live || [])[0], lastUp = (v.uploads || []).slice(-1)[0], cur = m.current;
+  const noRec = d.recorder_configured === false;   // 没配置录制机（recorder.ssh_host）：灰色，不算故障
   $('health').innerHTML =
+    (noRec ? hcard(T('recServer'), T('notConfigured'), 'recorder.ssh_host', '') :
     hcard(T('recServer'), v.error ? T('cantReach') : live ? T('recording', live.elapsed) : T('standby'),
           v.error ? v.error : `${live ? live.name : T('watching', v.watching ?? '?')}${v.note ? ' · ' + v.note : ''}`,
-          v.error || v.ok === false ? 'bad' : live ? 'on pulse' : '') +
+          v.error || v.ok === false ? 'bad' : live ? 'on pulse' : '')) +
     hcard(T('cloudSync'), lastUp ? T('latest', lastUp.t.slice(6, 11)) : '—', lastUp ? lastUp.msg.split('/').pop() : T('none'),
-          v.sync_ok ? 'on' : (v.checked ? 'bad' : '')) +
+          v.sync_ok ? 'on' : (v.checked && !noRec ? 'bad' : '')) +
     hcard(T('editor'), m.running ? T(cur ? 'running' : 'standbyEd') : T('notRunning'), m.running ? T('uptime', m.uptime) + (m.note ? ' · ' + m.note : '') : T('paused'),
           m.running ? (m.warn ? 'warn' : 'on') : 'bad') +
     hcard(T('doing'), d.step_name || (m.running ? T('idleWait') : '—'),
@@ -722,7 +724,7 @@ function renderSession(ses, d){
     : `<div class="n">${Math.ceil(left)}<small>${T('nextIn')}</small></div><div class="l" title="${esc(T('nextLbl', fmtHM(ses.next_round_min)))}">${T('nextLbl', fmtHM(ses.next_round_min))}</div>`;
   const allPicked = ses.done || (ses.ended && ses.total_min - ses.picked_until_min < 0.5);
   const full = ses.full && ses.full.ready
-    ? `<button class="btn" data-v="${esc(ses.full.video)}">${T('fullVideo')} · ${ses.full.size_gb}GB</button>${ses.full.srt ? `<a class="btn ghost" href="${esc(ses.full.srt)}" download="字幕.srt">${T('fullSrt')}</a>` : ''}<span class="chip ${ses.full.cloud === 'ok' ? 'good' : ses.full.cloud === 'fail' ? 'bad' : ''}">${T({ok: 'cloudOk', fail: 'cloudFail'}[ses.full.cloud] || 'cloudWait')}</span>`
+    ? `<button class="btn" data-v="${esc(ses.full.video)}">${T('fullVideo')} · ${ses.full.size_gb}GB</button>${ses.full.srt ? `<a class="btn ghost" href="${esc(ses.full.srt)}" download="字幕.srt">${T('fullSrt')}</a>` : ''}${ses.full.cloud === 'off' ? '' : `<span class="chip ${ses.full.cloud === 'ok' ? 'good' : ses.full.cloud === 'fail' ? 'bad' : ''}">${T({ok: 'cloudOk', fail: 'cloudFail'}[ses.full.cloud] || 'cloudWait')}</span>`}`
     : `<span class="chip">${T('fullPending')}</span>`;
   $('session').innerHTML = `
     <div class="shead">${tag}<span class="who">${esc(ses.anchor)}</span><span class="when">${T('startedAt', esc(ses.started_bj || ses.started))}</span><span class="id">${esc(ses.id || '')}</span></div>
